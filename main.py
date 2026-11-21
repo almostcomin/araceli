@@ -29,7 +29,9 @@ from memory import (
 )
 from memory.memory_store import MAX_SNAPSHOT_LIMIT
 
-from tools import execute_tool
+import projects
+
+from tools import execute_tool, set_workspace
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -67,10 +69,12 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "list_files",
             "description": (
-                "List readable text files in a project directory. "
-                "The result includes the directory and the time at which "
-                "the listing was generated. Paths must be relative to "
-                "the project root."
+                "List readable text files in a directory of the "
+                "current workspace: the active project directory if "
+                "one is active, otherwise the Araceli repository. "
+                "The result includes the directory and the time at "
+                "which the listing was generated. Paths must be "
+                "relative to the workspace root."
             ),
             "parameters": {
                 "type": "object",
@@ -90,10 +94,12 @@ BASE_TOOL_DEFINITIONS = [
             "name": "read_file",
             "description": (
                 "Read the current contents of a UTF-8 text file inside "
-                "the project directory. The result includes Python-generated "
-                "source metadata: relative path, read timestamp, byte size, "
-                "and SHA-256 hash. This is a fresh disk read, not the "
-                "startup snapshot."
+                "the current workspace: the active project directory "
+                "if one is active, otherwise the Araceli repository. "
+                "The result includes Python-generated source metadata: "
+                "relative path, read timestamp, byte size, and SHA-256 "
+                "hash. This is a fresh disk read, not a startup "
+                "snapshot."
             ),
             "parameters": {
                 "type": "object",
@@ -110,10 +116,13 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "write_file",
             "description": (
-                "Create or update a text file inside the authorized "
-                "memory, tests or docs directories. Existing files are "
-                "backed up automatically. The result reports the backup "
-                "and whether the written bytes were verified by reading "
+                "Create or update a text file. In an active project, "
+                "writing is allowed anywhere inside the project "
+                "directory. Without an active project, writing is "
+                "restricted to the memory, tests and docs directories "
+                "of the Araceli repository. Existing files are backed "
+                "up automatically. The result reports the backup and "
+                "whether the written bytes were verified by reading "
                 "the file back."
             ),
             "parameters": {
@@ -458,6 +467,7 @@ def build_system_prompt(
     project_context: str | None,
     project_context_source: dict[str, Any],
     memory_section: str | None = None,
+    active_project_section: str | None = None,
 ) -> str:
     """Combine behavioral instructions, startup context and source manifest."""
 
@@ -475,6 +485,9 @@ def build_system_prompt(
 
     if memory_section:
         combined_prompt += memory_section
+
+    if active_project_section:
+        combined_prompt += active_project_section
 
     source_manifest = {
         "description": (
@@ -568,6 +581,65 @@ def build_memory_snapshot_section() -> str:
         )
 
     section += "\n".join(entries)
+
+    return section
+
+
+def build_active_project_section(
+    active_project: dict[str, Any],
+) -> str:
+    """Build the active project section for the system prompt."""
+
+    context_text, context_metadata = projects.read_project_context(
+        active_project
+    )
+
+    metadata = {
+        "description": (
+            "The active project workspace for this session. While it "
+            "is active, the file tools (list_files, read_file, "
+            "write_file) operate on this project directory."
+        ),
+        "project": active_project["name"],
+        "activated_at": _utc_timestamp(),
+        "context_file": context_metadata,
+    }
+
+    section = (
+        "\n\n"
+        f"## Active Project — {active_project['name']}\n\n"
+        "This session has an active project workspace. While it is "
+        "active, the file tools (list_files, read_file, write_file) "
+        "operate on this project directory: paths are relative to the "
+        "project root, and write access covers the entire project.\n\n"
+        "Maintain the project context file ARACELI_CONTEXT.md at the "
+        "project root. It must contain the project description, "
+        "current progress, decisions taken, and next steps, so that "
+        "work can resume in a future session. Update it whenever there "
+        "is meaningful progress. Python reads it when the project is "
+        "activated.\n\n"
+        "```json\n"
+        f"{json.dumps(metadata, ensure_ascii=False, indent=2)}\n"
+        "```\n\n"
+    )
+
+    if context_text:
+        section += (
+            "### Project Context File — Snapshot Read at Activation\n\n"
+            f"{context_text}"
+        )
+    elif context_metadata.get("status") in ("not_found", "empty"):
+        section += (
+            "No usable project context file exists yet. Creating "
+            "ARACELI_CONTEXT.md at the project root is the first step "
+            "of the work in this project."
+        )
+    else:
+        section += (
+            "The project context file could not be read (status: "
+            f"{context_metadata.get('status')}). Consider recreating "
+            "it with write_file."
+        )
 
     return section
 
@@ -832,6 +904,149 @@ def forget_memory(memory_id: int) -> None:
     )
 
 
+_PROJECT_USAGE = (
+    "Usage: /project [status | list | add <path> | remove <name> | "
+    "use <name> | off]"
+)
+
+
+def _handle_project_command(
+    user_input: str,
+    active_project: dict[str, Any] | None,
+) -> tuple[str, dict[str, Any] | None, bool]:
+    """Handle a /project console command.
+
+    Returns (message, new_active_project, workspace_changed).
+    """
+
+    tokens = user_input.strip().split(maxsplit=2)
+
+    subcommand = tokens[1].lower() if len(tokens) > 1 else "status"
+    argument = tokens[2].strip() if len(tokens) > 2 else ""
+
+    if subcommand == "status":
+        if active_project is None:
+            return (
+                "No active project. Use /project use <name> to "
+                "activate one, or /project add <path> to register a "
+                "new project.",
+                active_project,
+                False,
+            )
+
+        return (
+            f"Active project: {active_project['name']}",
+            active_project,
+            False,
+        )
+
+    if subcommand == "list":
+        entries = projects.load_projects()
+
+        if not entries:
+            return (
+                "No projects registered. Use /project add <path>.",
+                active_project,
+                False,
+            )
+
+        lines = [f"Registered projects: {len(entries)}"]
+
+        for entry in entries:
+            marker = (
+                " (active)"
+                if active_project is not None
+                and entry["name"] == active_project["name"]
+                else ""
+            )
+
+            missing = (
+                " [missing]"
+                if not Path(entry["path"]).is_dir()
+                else ""
+            )
+
+            lines.append(
+                f"  {entry['name']}{marker}{missing} — {entry['path']}"
+            )
+
+        return ("\n".join(lines), active_project, False)
+
+    if subcommand == "add":
+        try:
+            entry = projects.add_project(argument)
+        except ValueError as error:
+            return (
+                f"Could not add project: {error}",
+                active_project,
+                False,
+            )
+
+        return (
+            f"Project added: {entry['name']} ({entry['path']})\n"
+            f"Activate it with: /project use {entry['name']}",
+            active_project,
+            False,
+        )
+
+    if subcommand == "remove":
+        try:
+            removed = projects.remove_project(argument)
+        except ValueError as error:
+            return (
+                f"Could not remove project: {error}",
+                active_project,
+                False,
+            )
+
+        was_active = (
+            active_project is not None
+            and removed["name"] == active_project["name"]
+        )
+
+        message = f"Project removed: {removed['name']}"
+
+        if was_active:
+            message += " (it was active; it has been deactivated)"
+
+        return (message, None if was_active else active_project, was_active)
+
+    if subcommand == "use":
+        if not argument:
+            return (_PROJECT_USAGE, active_project, False)
+
+        entry = projects.find_project(argument)
+
+        if entry is None:
+            return (
+                f"No project is registered with the name '{argument}'.",
+                active_project,
+                False,
+            )
+
+        if not Path(entry["path"]).is_dir():
+            return (
+                "The project directory no longer exists: "
+                f"{entry['path']}",
+                active_project,
+                False,
+            )
+
+        return (f"Active project: {entry['name']}", entry, True)
+
+    if subcommand == "off":
+        if active_project is None:
+            return ("No active project.", active_project, False)
+
+        return (
+            f"Project deactivated: {active_project['name']}",
+            None,
+            True,
+        )
+
+    return (_PROJECT_USAGE, active_project, False)
+
+
 def main() -> None:
     """Application entry point."""
 
@@ -854,23 +1069,49 @@ def main() -> None:
         return
 
     memory_enabled = False
-    memory_section = None
 
     try:
         init_database()
-        memory_section = build_memory_snapshot_section()
+        build_memory_snapshot_section()
         memory_enabled = True
     except Exception as error:
         print(f"\n[WARNING] Memory initialization failed: {error}")
         print("Starting without persistent memory tools.")
 
-    system_prompt = build_system_prompt(
-        behavioral_prompt,
-        behavioral_source,
-        project_context,
-        project_context_source,
-        memory_section,
-    )
+    active_project: dict[str, Any] | None = None
+
+    def compose_prompt(
+        current_project: dict[str, Any] | None,
+    ) -> str:
+        """Compose the full system prompt for a conversation start."""
+
+        prompt_memory_section = None
+
+        if memory_enabled:
+            try:
+                prompt_memory_section = build_memory_snapshot_section()
+            except Exception as error:
+                print(
+                    f"\n[WARNING] Could not refresh memory snapshot: "
+                    f"{error}"
+                )
+
+        project_section = (
+            build_active_project_section(current_project)
+            if current_project is not None
+            else None
+        )
+
+        return build_system_prompt(
+            behavioral_prompt,
+            behavioral_source,
+            project_context,
+            project_context_source,
+            prompt_memory_section,
+            project_section,
+        )
+
+    system_prompt = compose_prompt(active_project)
 
     tool_definitions = BASE_TOOL_DEFINITIONS + (
         MEMORY_TOOL_DEFINITIONS if memory_enabled else []
@@ -893,10 +1134,13 @@ def main() -> None:
     else:
         print("Memory: disabled (initialization failed)")
 
+    print("Active project: none")
+
     print("\nAraceli is ready.")
     print(
         "Commands: /reset (new conversation), /memory (list memories), "
-        "/forget <id> (delete memory), /exit (quit)"
+        "/forget <id> (delete memory), /project (manage project "
+        "workspaces), /exit (quit)"
     )
     print("-" * 55)
 
@@ -915,26 +1159,31 @@ def main() -> None:
                 break
 
             if command == "/reset":
-                if memory_enabled:
-                    try:
-                        memory_section = build_memory_snapshot_section()
-                    except Exception as error:
-                        memory_section = None
-                        print(
-                            f"\n[WARNING] Could not refresh memory "
-                            f"snapshot: {error}"
-                        )
-
-                    system_prompt = build_system_prompt(
-                        behavioral_prompt,
-                        behavioral_source,
-                        project_context,
-                        project_context_source,
-                        memory_section,
-                    )
-
+                system_prompt = compose_prompt(active_project)
                 messages = create_conversation(system_prompt)
                 print("\n[Conversation reset]")
+                continue
+
+            if command == "/project" or command.startswith("/project "):
+                message, new_active, changed = _handle_project_command(
+                    user_input,
+                    active_project,
+                )
+
+                print(f"\n{message}")
+
+                if changed:
+                    active_project = new_active
+
+                    if active_project is not None:
+                        set_workspace(active_project["path"])
+                    else:
+                        set_workspace(None)
+
+                    system_prompt = compose_prompt(active_project)
+                    messages = create_conversation(system_prompt)
+                    print("\n[New conversation started]")
+
                 continue
 
             if command == "/memory":
