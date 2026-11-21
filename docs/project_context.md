@@ -26,8 +26,9 @@ English.
     -   `memory/memory_store.py`: save, search, update, and recent-
         memory operations with Python-side validation.
 -   `docs/`: project documentation.
--   `tests/`: automated memory tests (`test_memory.py`) and tool
-    documentation (`tool_test.md`).
+-   `tests/`: automated tests (`test_memory.py` for the memory system,
+    `test_tools.py` for the calculator, file tools, and tool dispatch)
+    and tool documentation (`tool_test.md`).
 -   `data/`: application data directory; contains the SQLite memory
     database. Excluded from the model's file access and from git.
 
@@ -177,6 +178,11 @@ LM Studio must be running with the configured model loaded. The
 application does not currently retrieve the loaded model's effective
 context length automatically.
 
+The only direct dependency is `openai`, pinned in `requirements.txt`.
+Rebuild the environment with `python -m venv .venv` followed by
+`.venv\Scripts\pip install -r requirements.txt`. Run the test suite
+with `python -m unittest discover -s tests -t .`.
+
 ## Current Status
 
 Implemented: - Local LM Studio integration through the OpenAI Python
@@ -193,24 +199,25 @@ User-side memory management console commands: `/memory` (list) and
 Automated unit tests for the memory store and the memory tool dispatch
 (`tests/test_memory.py`, run with `python -m unittest discover -s tests
 -t .`). - Version control with git and a private GitHub repository;
-`data/`, `.venv/`, `.backups/`, and `__pycache__/` are not tracked.
+`data/`, `.venv/`, `.backups/`, and `__pycache__/` are not tracked. -
+`requirements.txt` pinning the direct dependency (`openai`). -
+Automated unit tests for the calculator, file tools, and tool dispatch
+in addition to the memory tests (91 tests total).
 
 Not implemented: - Conversation summarization, pruning, or compaction. -
 Internet search or external integrations. - Automatic discovery of the
 effective LM Studio context length. - Physical memory deletion through
 model tools. - Semantic or embedding-based memory search. - A persistent
 tool-execution audit log (deliberately deferred). - Automated tests for
-the file tools and the conversation loop.
+the conversation loop (command handling, model interaction).
 
 ## Development Priorities
 
 1.  Evaluate memory retrieval quality with real usage before
     considering FTS5 or embedding-based search.
-2.  Add focused automated tests for the file tools and conversation
-    handling.
-3.  Consider conversation summarization or pruning when context usage
+2.  Consider conversation summarization or pruning when context usage
     approaches the configured limit.
-4.  Revisit a persistent execution log only if unexplained tool or file
+3.  Revisit a persistent execution log only if unexplained tool or file
     incidents occur.
 
 This document describes the current implementation. When it conflicts
