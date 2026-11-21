@@ -8,7 +8,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
+try:
+    from openai import OpenAI
+
+    from tools import execute_tool, set_workspace
+except ModuleNotFoundError as error:
+    print("=" * 55)
+    print("MISSING DEPENDENCY")
+    print(f"    {error}")
+    print()
+    print("This usually means the wrong virtual environment is active.")
+    print("Activate the virtual environment of THIS project directory:")
+    print(
+        "    "
+        + str(Path(__file__).resolve().parent / ".venv" / "Scripts" / "activate.bat")
+    )
+    print()
+    print("If the dependency is still missing, install requirements:")
+    print("    pip install -r requirements.txt")
+    print("=" * 55)
+    raise SystemExit(1)
 
 from config import (
     API_KEY,
@@ -30,8 +49,6 @@ from memory import (
 from memory.memory_store import MAX_SNAPSHOT_LIMIT
 
 import projects
-
-from tools import execute_tool, set_workspace
 
 
 ROOT_DIR = Path(__file__).resolve().parent
