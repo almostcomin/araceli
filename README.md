@@ -1,0 +1,181 @@
+# Araceli
+
+Araceli is a local-first personal AI assistant. It runs entirely on
+your own computer, communicates with a language model served locally
+through LM Studio, and uses a set of Python-controlled tools to act on
+your behalf: reading and writing project files, analyzing private PDF
+documents, keeping persistent memory, and performing controlled web
+research.
+
+The language model provides reasoning and decision-making; Python
+provides execution, permissions, verification, and control.
+
+## Scope
+
+Araceli is designed to be a genuinely useful assistant, not a
+chatbot with predefined commands. Its core capabilities:
+
+- **Conversation** with a local model through a console interface,
+  in Spanish, with tool calling.
+- **Persistent memory** backed by SQLite: preferences, project
+  information, decisions, tasks, and facts survive conversation
+  resets and application restarts.
+- **File access** under strict Python-enforced permissions: allowed
+  extensions, size limits, excluded directories, and automatic
+  backups before every overwrite.
+- **Private document analysis**: PDF text extraction from a private
+  documents directory that no other tool can reach.
+- **Controlled web research**: generic web searches and page reading
+  with protections against private-network access (SSRF), binary
+  downloads, and oversized content.
+- **Execution provenance**: every tool call returns a Python-generated
+  execution record (unique id, timestamps, status, SHA-256 where
+  applicable) so claims about actions are backed by evidence.
+
+### Design principles
+
+- **Local-first and private.** Private data never leaves your machine.
+  The memory database and private documents are excluded from git and
+  from the model's general file access. Web searches use generic,
+  non-identifying queries only.
+- **Python is the security boundary.** The model can only propose
+  actions; Python validates arguments, enforces path and size limits,
+  restricts network access, and decides which tools exist. Model
+  instructions are never a substitute for application-side validation.
+- **Truthfulness and verification.** Araceli distinguishes startup
+  snapshots from current file contents, and must never claim an action
+  succeeded without a successful execution record.
+- **Controlled autonomy.** Araceli plans and executes multi-step tasks
+  within its permissions, and asks for authorization before external
+  or consequential actions.
+
+## Requirements
+
+- **Python 3.13** (tested on Windows 11; the project is plain Python
+  and should be portable with minor path adjustments).
+- **[LM Studio](https://lmstudio.ai)** serving an OpenAI-compatible
+  API at `http://127.0.0.1:1234/v1` with a tool-calling model loaded
+  (the project currently uses `qwen/qwen3.5-9b` with a 24,576-token
+  context).
+- Python dependencies (installed from `requirements.txt`):
+  - `openai` — API client for LM Studio
+  - `pypdf` — PDF text extraction
+  - `ddgs` — DuckDuckGo web search (no API key required)
+  - `truststore` — operating-system certificate store for TLS
+
+No other services, accounts, or API keys are needed.
+
+## Setup
+
+1. Clone the repository and create a virtual environment:
+
+   ```bat
+   cd /d D:\Araceli
+   python -m venv .venv
+   .venv\Scripts\activate.bat
+   ```
+
+2. Install the dependencies:
+
+   ```bat
+   pip install -r requirements.txt
+   ```
+
+3. Configure LM Studio:
+
+   - Load a tool-calling chat model (default: `qwen/qwen3.5-9b`).
+   - Start the local server bound to `127.0.0.1:1234`.
+   - Set the model context length (default expected: 24,576 tokens).
+   - Keep the server bound to localhost; do not expose it to the
+     network.
+
+4. Optional: place private PDF documents you want Araceli to analyze
+   in `data/documents/`. This directory is not tracked by git and is
+   only reachable through the `read_pdf` tool.
+
+## Running
+
+```bat
+.venv\Scripts\activate.bat
+python main.py
+```
+
+Console commands:
+
+| Command | Description |
+|---|---|
+| `/reset` | Start a new conversation (memory snapshot is refreshed) |
+| `/memory` | List active memories with ids, categories and titles |
+| `/forget <id>` | Physically delete a memory by id |
+| `/exit` | Quit the application |
+
+Every tool execution is shown in the console as a compact
+`[tool] name -> status` line, so you can see what the assistant
+actually does and whether each operation succeeded.
+
+## Tools available to the model
+
+| Tool | Purpose |
+|---|---|
+| `calculate` | Restricted arithmetic evaluation (AST-based, no arbitrary code) |
+| `list_files` | List allowed text files in the project |
+| `read_file` | Read an allowed text file with SHA-256 provenance |
+| `write_file` | Write to `memory/`, `tests/`, or `docs/` with pre-overwrite backups |
+| `save_memory` | Store a persistent memory (validated categories and limits) |
+| `search_memories` | Keyword search across persistent memories |
+| `update_memory` | Update or supersede a memory by id |
+| `read_pdf` | Extract text from a PDF in `data/documents/` |
+| `web_search` | Generic web search via DuckDuckGo |
+| `web_fetch` | Read a public web page as text (SSRF-protected) |
+
+## Project layout
+
+```text
+Araceli/
+├── main.py              # Startup, console loop, tool-call handling
+├── config.py            # LM Studio connection and generation settings
+├── tools.py             # Tool implementations, validation, dispatch
+├── system_prompt.md     # Behavioral instructions (Spanish)
+├── requirements.txt     # Pinned direct dependencies
+├── memory/              # Persistent memory package (SQLite)
+│   ├── database.py      # Connection and schema
+│   ├── models.py        # MemoryRecord dataclass
+│   └── memory_store.py  # Save, search, update, delete operations
+├── data/                # Local data (gitignored)
+│   ├── araceli.db       # Memory database (created on first run)
+│   └── documents/       # Private PDF documents
+├── tests/               # Automated test suite (unittest)
+└── docs/                # Technical project documentation
+```
+
+## Testing
+
+The project includes an automated test suite (128 tests) covering the
+memory store, memory and file tool dispatch, the calculator, file
+access restrictions, PDF extraction, and web tool protections:
+
+```bat
+python -m unittest discover -s tests -t .
+```
+
+## Privacy notes
+
+- `data/` (memory database, private documents), `.venv/`, and
+  `.backups/` are gitignored and never leave your machine.
+- Web searches must be generic; the system prompt forbids including
+  private data in queries, and every executed query is visible in the
+  console.
+- `web_fetch` only reaches public http/https addresses on ports
+  80/443; local and private network addresses are rejected.
+
+## Status
+
+Araceli is under active development. Implemented: conversation with
+tool calling, persistent memory, user-side memory management, file
+tools with backups, PDF analysis, and controlled web research. See
+`docs/project_context.md` for the detailed current state and
+development priorities.
+
+The project should grow progressively: reliability, privacy,
+transparency, and maintainability take precedence over adding
+features quickly.
