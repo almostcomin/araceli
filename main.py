@@ -18,6 +18,12 @@ from config import (
     SYSTEM_PROMPT_FILE,
 )
 
+from memory import (
+    DEFAULT_DB_PATH,
+    get_recent_memories,
+    init_database,
+)
+
 from tools import execute_tool
 
 
@@ -27,8 +33,11 @@ PROJECT_CONTEXT_PATH = ROOT_DIR / "docs" / "project_context.md"
 
 MAX_TOOL_ROUNDS = 5
 
+MEMORY_SNAPSHOT_LIMIT = 15
+MEMORY_CONTENT_PREVIEW_LENGTH = 300
 
-TOOL_DEFINITIONS = [
+
+BASE_TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
@@ -109,6 +118,142 @@ TOOL_DEFINITIONS = [
                     "content": {"type": "string"},
                 },
                 "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+
+MEMORY_CATEGORY_ENUM = [
+    "preference",
+    "personal",
+    "project",
+    "decision",
+    "task",
+    "fact",
+    "knowledge",
+]
+
+MEMORY_TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "save_memory",
+            "description": (
+                "Store a new persistent memory that remains available "
+                "across conversation resets and application restarts. "
+                "Search first to avoid duplicates: if an active memory "
+                "with the same category and title exists, update it "
+                "with update_memory instead."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": (
+                            "Memory category."
+                        ),
+                        "enum": MEMORY_CATEGORY_ENUM,
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": (
+                            "Short identifying label "
+                            "(max 200 characters)."
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": (
+                            "The memory itself (max 4000 characters)."
+                        ),
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated keywords "
+                            "(max 200 characters)."
+                        ),
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": (
+                            "Optional provenance note about where this "
+                            "information comes from."
+                        ),
+                    },
+                },
+                "required": ["category", "title", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_memories",
+            "description": (
+                "Search persistent memories by keyword across title, "
+                "content and tags. Returns active memories by default, "
+                "most recently updated first. Use this to check the "
+                "current complete state of memory."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Keyword or phrase to search for."
+                        ),
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Optional category filter.",
+                        "enum": MEMORY_CATEGORY_ENUM,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": (
+                            "Maximum number of results (1-50, default 20)."
+                        ),
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_memory",
+            "description": (
+                "Update an existing persistent memory by id. Use this "
+                "to correct or refine a memory, or to mark it as "
+                "superseded when it is no longer current."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "integer",
+                        "description": "Id of the memory to update.",
+                    },
+                    "title": {"type": "string"},
+                    "content": {"type": "string"},
+                    "category": {
+                        "type": "string",
+                        "enum": MEMORY_CATEGORY_ENUM,
+                    },
+                    "tags": {"type": "string"},
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "superseded"],
+                    },
+                },
+                "required": ["memory_id"],
                 "additionalProperties": False,
             },
         },
@@ -204,6 +349,7 @@ def build_system_prompt(
     system_prompt_source: dict[str, Any],
     project_context: str | None,
     project_context_source: dict[str, Any],
+    memory_section: str | None = None,
 ) -> str:
     """Combine behavioral instructions, startup context and source manifest."""
 
@@ -218,6 +364,9 @@ def build_system_prompt(
             "## Project Context — Startup Snapshot\n\n"
             f"{project_context}"
         )
+
+    if memory_section:
+        combined_prompt += memory_section
 
     source_manifest = {
         "description": (
@@ -256,6 +405,65 @@ def build_system_prompt(
     return combined_prompt
 
 
+def build_memory_snapshot_section() -> str:
+    """Build the persistent memory snapshot section for the system prompt."""
+
+    records = get_recent_memories(MEMORY_SNAPSHOT_LIMIT)
+
+    metadata = {
+        "description": (
+            "Persistent memories loaded by Python from the memory "
+            "database. This is a snapshot of the most recently "
+            "updated active memories; use the search_memories tool "
+            "for the current complete state of memory."
+        ),
+        "snapshot_type": "memory_snapshot",
+        "loaded_at": _utc_timestamp(),
+        "record_count": len(records),
+        "limits": {
+            "snapshot_records": MEMORY_SNAPSHOT_LIMIT,
+            "content_preview_characters": MEMORY_CONTENT_PREVIEW_LENGTH,
+        },
+    }
+
+    section = (
+        "\n\n"
+        "## Persistent Memory — Startup Snapshot\n\n"
+        "The following memories were loaded by Python at startup from "
+        "the persistent memory database. This snapshot may be outdated "
+        "or incomplete: use the search_memories tool to retrieve the "
+        "current state of memory, save_memory to add new memories, and "
+        "update_memory to modify or supersede existing ones.\n\n"
+        "```json\n"
+        f"{json.dumps(metadata, ensure_ascii=False, indent=2)}\n"
+        "```\n\n"
+    )
+
+    if not records:
+        section += "No active memories are stored yet."
+        return section
+
+    entries = []
+
+    for record in records:
+        preview = record.content
+
+        if len(preview) > MEMORY_CONTENT_PREVIEW_LENGTH:
+            preview = (
+                preview[:MEMORY_CONTENT_PREVIEW_LENGTH].rstrip()
+                + " [...]"
+            )
+
+        entries.append(
+            f"- [#{record.id} | {record.category} | {record.title} | "
+            f"updated {record.updated_at}]\n  {preview}"
+        )
+
+    section += "\n".join(entries)
+
+    return section
+
+
 def create_client() -> OpenAI:
     """Create an OpenAI-compatible client connected to LM Studio."""
 
@@ -282,6 +490,7 @@ def create_conversation(
 def generate_response(
     client: OpenAI,
     messages: list[dict[str, Any]],
+    tool_definitions: list[dict[str, Any]],
 ) -> tuple[str, int | None, str | None]:
     """Generate a response and handle tool calls."""
 
@@ -294,8 +503,8 @@ def generate_response(
             "max_tokens": MAX_TOKENS,
         }
 
-        if round_index < MAX_TOOL_ROUNDS:
-            request_arguments["tools"] = TOOL_DEFINITIONS
+        if tool_definitions and round_index < MAX_TOOL_ROUNDS:
+            request_arguments["tools"] = tool_definitions
             request_arguments["tool_choice"] = "auto"
 
         response = client.chat.completions.create(**request_arguments)
@@ -351,18 +560,37 @@ def main() -> None:
     print("=" * 55)
 
     try:
-        system_prompt, system_prompt_source = load_system_prompt()
+        behavioral_prompt, behavioral_source = load_system_prompt()
         project_context, project_context_source = load_project_context()
+    except Exception as error:
+        print(f"\nInitialization error: {error}")
+        return
 
-        system_prompt = build_system_prompt(
-            system_prompt,
-            system_prompt_source,
-            project_context,
-            project_context_source,
-        )
+    memory_enabled = False
+    memory_section = None
 
+    try:
+        init_database()
+        memory_section = build_memory_snapshot_section()
+        memory_enabled = True
+    except Exception as error:
+        print(f"\n[WARNING] Memory initialization failed: {error}")
+        print("Starting without persistent memory tools.")
+
+    system_prompt = build_system_prompt(
+        behavioral_prompt,
+        behavioral_source,
+        project_context,
+        project_context_source,
+        memory_section,
+    )
+
+    tool_definitions = BASE_TOOL_DEFINITIONS + (
+        MEMORY_TOOL_DEFINITIONS if memory_enabled else []
+    )
+
+    try:
         client = create_client()
-
     except Exception as error:
         print(f"\nInitialization error: {error}")
         return
@@ -372,6 +600,12 @@ def main() -> None:
     print(f"\nModel: {MODEL}")
     print(f"Server: {BASE_URL}")
     print(f"Context length: {CONTEXT_LENGTH:,} tokens")
+
+    if memory_enabled:
+        print(f"Memory: enabled ({DEFAULT_DB_PATH.name})")
+    else:
+        print("Memory: disabled (initialization failed)")
+
     print("\nAraceli is ready.")
     print("Commands: /reset (new conversation), /exit (quit)")
     print("-" * 55)
@@ -391,6 +625,24 @@ def main() -> None:
                 break
 
             if command == "/reset":
+                if memory_enabled:
+                    try:
+                        memory_section = build_memory_snapshot_section()
+                    except Exception as error:
+                        memory_section = None
+                        print(
+                            f"\n[WARNING] Could not refresh memory "
+                            f"snapshot: {error}"
+                        )
+
+                    system_prompt = build_system_prompt(
+                        behavioral_prompt,
+                        behavioral_source,
+                        project_context,
+                        project_context_source,
+                        memory_section,
+                    )
+
                 messages = create_conversation(system_prompt)
                 print("\n[Conversation reset]")
                 continue
@@ -408,6 +660,7 @@ def main() -> None:
                 answer, context_tokens, finish_reason = generate_response(
                     client,
                     messages,
+                    tool_definitions,
                 )
 
                 print(answer)
