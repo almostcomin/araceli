@@ -89,9 +89,15 @@ No other services, accounts, or API keys are needed.
    - Keep the server bound to localhost; do not expose it to the
      network.
 
-4. Optional: place private PDF documents you want Araceli to analyze
-   in `data/documents/`. This directory is not tracked by git and is
-   only reachable through the `read_pdf` tool.
+4. Optional: configure where Araceli reads your private PDF documents.
+
+   By default, PDFs placed in `data/documents/` are readable through
+   the `read_pdf` tool. For real private documents that live outside
+   the repository, create a file `data/documents_path.txt` containing
+   a single line with the absolute path of your documents folder
+   (for example `D:\MyDocuments`). That file is gitignored, the folder
+   is only accessible through `read_pdf`, and the model never sees the
+   absolute path.
 
 ## Running
 
@@ -124,7 +130,8 @@ actually does and whether each operation succeeded.
 | `save_memory` | Store a persistent memory (validated categories and limits) |
 | `search_memories` | Keyword search across persistent memories |
 | `update_memory` | Update or supersede a memory by id |
-| `read_pdf` | Extract text from a PDF in `data/documents/` |
+| `read_pdf` | Extract text from a PDF in the configured documents directories |
+| `list_documents` | List available PDF documents with name, size and date |
 | `web_search` | Generic web search via DuckDuckGo |
 | `web_fetch` | Read a public web page as text (SSRF-protected) |
 
@@ -143,7 +150,8 @@ Araceli/
 │   └── memory_store.py  # Save, search, update, delete operations
 ├── data/                # Local data (gitignored)
 │   ├── araceli.db       # Memory database (created on first run)
-│   └── documents/       # Private PDF documents
+│   ├── documents/       # Internal PDF documents directory
+│   └── documents_path.txt  # Optional pointer to an external documents folder
 ├── tests/               # Automated test suite (unittest)
 └── docs/                # Technical project documentation
 ```
@@ -160,8 +168,9 @@ python -m unittest discover -s tests -t .
 
 ## Privacy notes
 
-- `data/` (memory database, private documents), `.venv/`, and
-  `.backups/` are gitignored and never leave your machine.
+- `data/` (memory database, private documents, and the optional
+  external documents pointer), `.venv/`, and `.backups/` are
+  gitignored and never leave your machine.
 - Web searches must be generic; the system prompt forbids including
   private data in queries, and every executed query is visible in the
   console.

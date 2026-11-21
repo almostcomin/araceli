@@ -132,12 +132,12 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "read_pdf",
             "description": (
-                "Extract text from a PDF document stored in the "
-                "private documents directory (data/documents/). The "
-                "path is relative to that directory, e.g. 'bill.pdf'. "
-                "The result includes the extracted text, page count "
-                "and source metadata (SHA-256, extraction timestamp). "
-                "Scanned PDFs without a text layer return no text."
+                "Extract text from a PDF document in the configured "
+                "documents directories. The path is relative to those "
+                "directories, e.g. 'bill.pdf'. The result includes the "
+                "extracted text, page count and source metadata "
+                "(SHA-256, extraction timestamp). Scanned PDFs without "
+                "a text layer return no text."
             ),
             "parameters": {
                 "type": "object",
@@ -145,12 +145,30 @@ BASE_TOOL_DEFINITIONS = [
                     "path": {
                         "type": "string",
                         "description": (
-                            "Path relative to data/documents/, "
-                            "e.g. 'gas_bill_november.pdf'."
+                            "Path relative to the documents directories, "
+                            "e.g. 'gas_bill_november.pdf'. Use "
+                            "list_documents to discover available files."
                         ),
                     }
                 },
                 "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_documents",
+            "description": (
+                "List the PDF documents available in the configured "
+                "documents directories, with name, size and modification "
+                "time. Use it to discover which documents can be read "
+                "with read_pdf. Takes no arguments."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": False,
             },
         },

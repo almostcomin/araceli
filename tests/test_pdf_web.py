@@ -4,6 +4,7 @@ import email.message
 import hashlib
 import json
 import sys
+import tempfile
 import unittest
 
 from pathlib import Path
@@ -105,7 +106,8 @@ class PdfReadingTestCase(TempProjectTestCase):
         self.assertEqual(result["page_count"], 1)
         self.assertFalse(result["text_truncated"])
         self.assertIsNone(result["note"])
-        self.assertEqual(result["path"], "data/documents/bill.pdf")
+        self.assertEqual(result["path"], "bill.pdf")
+        self.assertEqual(result["documents_dir"], "internal")
         self.assertEqual(
             result["source"]["sha256"],
             hashlib.sha256(pdf_bytes).hexdigest(),
@@ -114,6 +116,7 @@ class PdfReadingTestCase(TempProjectTestCase):
             result["source"]["source_type"],
             "pdf_text_extraction",
         )
+        self.assertEqual(result["source"]["documents_dir"], "internal")
         self.assertTrue(result["source"]["extracted_at"].endswith("Z"))
 
     def test_extracts_multiple_pages(self):
@@ -186,6 +189,140 @@ class PdfReadingTestCase(TempProjectTestCase):
 
         self.assertEqual(error_envelope["execution"]["status"], "error")
         self.assertIn("traversal", error_envelope["error"]["message"])
+
+
+class DocumentsDirectoryTestCase(TempProjectTestCase):
+    """Tests for the external documents directory mechanism."""
+
+    def setUp(self):
+        super().setUp()
+
+        self.documents_dir = self.project_root / "data" / "documents"
+        self.documents_dir.mkdir(parents=True)
+
+        self._external_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._external_temp.cleanup)
+        self.external_dir = Path(self._external_temp.name)
+
+    def _configure_external(self, path_text):
+        pointer = self.project_root / "data" / "documents_path.txt"
+        pointer.write_text(path_text, encoding="utf-8")
+
+    def test_reads_from_external_configured_directory(self):
+        (self.external_dir / "real_bill.pdf").write_bytes(
+            _make_pdf("Real external bill")
+        )
+        self._configure_external(str(self.external_dir))
+
+        result = read_pdf("real_bill.pdf")
+
+        self.assertIn("Real external bill", result["text"])
+        self.assertEqual(result["documents_dir"], "external")
+        self.assertEqual(result["path"], "real_bill.pdf")
+
+    def test_internal_directory_still_works_alongside_external(self):
+        (self.external_dir / "external_bill.pdf").write_bytes(
+            _make_pdf("External")
+        )
+        (self.documents_dir / "internal_bill.pdf").write_bytes(
+            _make_pdf("Internal")
+        )
+        self._configure_external(str(self.external_dir))
+
+        self.assertIn("Internal", read_pdf("internal_bill.pdf")["text"])
+        self.assertIn("External", read_pdf("external_bill.pdf")["text"])
+
+    def test_external_takes_priority_on_name_collision(self):
+        (self.external_dir / "bill.pdf").write_bytes(_make_pdf("External"))
+        (self.documents_dir / "bill.pdf").write_bytes(_make_pdf("Internal"))
+        self._configure_external(str(self.external_dir))
+
+        result = read_pdf("bill.pdf")
+
+        self.assertEqual(result["documents_dir"], "external")
+
+    def test_list_documents_combines_both_directories(self):
+        (self.external_dir / "a_external.pdf").write_bytes(
+            _make_pdf("A")
+        )
+        (self.external_dir / "notes.txt").write_text("not a pdf")
+        (self.documents_dir / "b_internal.pdf").write_bytes(
+            _make_pdf("B")
+        )
+        self._configure_external(str(self.external_dir))
+
+        from tools import list_documents
+
+        result = list_documents()
+
+        self.assertEqual(result["count"], 2)
+        self.assertFalse(result["truncated"])
+
+        names = {document["name"] for document in result["documents"]}
+
+        self.assertEqual(names, {"a_external.pdf", "b_internal.pdf"})
+
+        kinds = {
+            document["name"]: document["documents_dir"]
+            for document in result["documents"]
+        }
+
+        self.assertEqual(kinds["a_external.pdf"], "external")
+        self.assertEqual(kinds["b_internal.pdf"], "internal")
+
+        self.assertTrue(result["source"]["listed_at"].endswith("Z"))
+
+    def test_list_documents_without_pdfs(self):
+        from tools import list_documents
+
+        result = list_documents()
+
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["documents"], [])
+
+    def test_list_documents_without_pointer_file(self):
+        (self.documents_dir / "bill.pdf").write_bytes(_make_pdf("X"))
+
+        from tools import list_documents
+
+        result = list_documents()
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(
+            result["documents"][0]["documents_dir"], "internal"
+        )
+
+    def test_invalid_pointer_relative_path_raises(self):
+        self._configure_external("relative/path")
+
+        with self.assertRaises(ValueError) as context:
+            read_pdf("anything.pdf")
+
+        self.assertIn("absolute", str(context.exception))
+
+    def test_invalid_pointer_missing_directory_raises(self):
+        self._configure_external(str(self.external_dir / "ghost"))
+
+        with self.assertRaises(ValueError) as context:
+            read_pdf("anything.pdf")
+
+        self.assertIn("does not exist", str(context.exception))
+
+    def test_list_documents_dispatch(self):
+        (self.documents_dir / "bill.pdf").write_bytes(_make_pdf("X"))
+
+        envelope = json.loads(
+            execute_tool("list_documents", "{}")
+        )
+
+        self.assertEqual(envelope["execution"]["status"], "success")
+        self.assertEqual(envelope["result"]["count"], 1)
+
+        error_envelope = json.loads(
+            execute_tool("list_documents", '{"bogus": 1}')
+        )
+
+        self.assertEqual(error_envelope["execution"]["status"], "error")
 
 
 class WebSearchTestCase(unittest.TestCase):

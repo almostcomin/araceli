@@ -31,9 +31,10 @@ English.
     `test_pdf_web.py` for PDF and web tools) and tool documentation
     (`tool_test.md`).
 -   `data/`: application data directory; contains the SQLite memory
-    database (`data/araceli.db`) and the private documents directory
-    (`data/documents/`). Both are excluded from the model's general
-    file access and from git.
+    database (`data/araceli.db`), the internal documents directory
+    (`data/documents/`), and the optional pointer file for the external
+    documents directory (`data/documents_path.txt`). All are excluded
+    from the model's general file access and from git.
 
 The model proposes tool calls. Python code validates and executes them.
 Instructions given to the model are not a substitute for
@@ -114,10 +115,14 @@ The model can request these tools:
     Returns active memories by default, most recently updated first.
 -   `update_memory(memory_id, ...)`: updates fields of an existing
     memory by id, including changing its status to `superseded`.
--   `read_pdf(path)`: extracts text from a PDF stored in
-    `data/documents/`. Paths are relative to that directory. Limits:
-    10 MB, 50 pages, 100,000 extracted characters. Scanned PDFs
+-   `read_pdf(path)`: extracts text from a PDF stored in the configured
+    documents directories. Paths are relative to those directories.
+    Limits: 10 MB, 50 pages, 100,000 extracted characters. Scanned PDFs
     without a text layer return no text.
+-   `list_documents()`: lists the PDF documents available in the
+    configured documents directories (name, size, modification time,
+    and which directory each belongs to). Only `.pdf` files are listed,
+    up to 100 entries.
 -   `web_search(query, max_results)`: generic web search through
     DuckDuckGo (`ddgs` package, no API key). Returns titles, URLs and
     snippets with provenance metadata. Retries transient failures up to
@@ -133,9 +138,21 @@ beyond the web tools above.
 
 ## Private Documents and Web Access
 
-Private documents live in `data/documents/` (not tracked by git, not
-reachable through the general file tools). `read_pdf` is the only way
-to read them, and it cannot escape that directory.
+Documents are read from up to two configured roots:
+
+1.  **External directory** (optional, preferred on name collision):
+    the user defines it by writing a single absolute path into
+    `data/documents_path.txt` (gitignored, part of `data/`). This is
+    the intended place for real private documents that live outside
+    the repository, keeping them away from development tooling.
+2.  **Internal directory** (`data/documents/`, gitignored): useful for
+    test and demo documents.
+
+`read_pdf` is the only way to read documents from either root; it
+cannot escape them (no traversal, no absolute paths), and it reports
+which root each file came from without exposing the external absolute
+path to the model. A misconfigured pointer file (relative path or
+missing directory) raises a clear error.
 
 Web access rules enforced by Python:
 

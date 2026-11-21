@@ -63,6 +63,7 @@ MAX_LIST_RESULTS = 200
 MAX_PDF_FILE_SIZE = 10 * 1024 * 1024
 MAX_PDF_PAGES = 50
 MAX_PDF_TEXT_CHARS = 100_000
+MAX_DOCUMENT_LIST_RESULTS = 100
 
 DEFAULT_WEB_RESULTS = 8
 MAX_WEB_RESULTS = 10
@@ -400,8 +401,50 @@ def update_memory(
     return {"memory": record.to_dict()}
 
 
-def _resolve_document_path(relative_path: str) -> Path:
-    """Resolve a path inside the private documents directory."""
+def _get_document_roots() -> list[tuple[Path, str]]:
+    """Return the configured document roots.
+
+    The external root is defined by the user in data/documents_path.txt
+    (a single line with an absolute path to a directory outside the
+    project). The internal root is data/documents/ inside the project.
+    """
+
+    roots: list[tuple[Path, str]] = []
+
+    pointer_path = PROJECT_ROOT / "data" / "documents_path.txt"
+
+    if pointer_path.is_file():
+        pointer_text = pointer_path.read_text(
+            encoding="utf-8-sig"
+        ).strip()
+
+        if pointer_text:
+            external_root = Path(pointer_text)
+
+            if not external_root.is_absolute():
+                raise ValueError(
+                    "The configured documents path must be absolute "
+                    "(check data/documents_path.txt)."
+                )
+
+            if not external_root.is_dir():
+                raise ValueError(
+                    "The configured documents directory does not exist "
+                    "(check data/documents_path.txt)."
+                )
+
+            roots.append((external_root.resolve(), "external"))
+
+    internal_root = (PROJECT_ROOT / "data" / "documents").resolve()
+    roots.append((internal_root, "internal"))
+
+    return roots
+
+
+def _resolve_document_path(
+    relative_path: str,
+) -> tuple[Path, str]:
+    """Resolve a document path against the configured roots."""
 
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise ValueError("A non-empty relative path is required.")
@@ -414,28 +457,31 @@ def _resolve_document_path(relative_path: str) -> Path:
     if ".." in requested_path.parts:
         raise ValueError("Parent directory traversal is not allowed.")
 
-    documents_root = (PROJECT_ROOT / "data" / "documents").resolve()
-    resolved_path = (documents_root / requested_path).resolve()
+    for root, root_kind in _get_document_roots():
+        resolved_path = (root / requested_path).resolve()
 
-    if not resolved_path.is_relative_to(documents_root):
-        raise ValueError("Path is outside the documents directory.")
+        if not resolved_path.is_relative_to(root):
+            continue
 
-    return resolved_path
+        if resolved_path.is_file():
+            return resolved_path, root_kind
+
+    raise FileNotFoundError(
+        "Document not found in the configured documents directories. "
+        "Use list_documents to see the available files."
+    )
 
 
 def read_pdf(path: str) -> dict[str, Any]:
-    """Extract text from a PDF in the private documents directory."""
+    """Extract text from a PDF in the configured documents directories."""
 
-    file_path = _resolve_document_path(path)
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("A non-empty relative path is required.")
 
-    if file_path.suffix.lower() != ".pdf":
+    if Path(path).suffix.lower() != ".pdf":
         raise ValueError("Only PDF documents are supported.")
 
-    if not file_path.is_file():
-        raise FileNotFoundError(
-            "Document not found. Paths are relative to "
-            "data/documents/."
-        )
+    file_path, root_kind = _resolve_document_path(path)
 
     file_size = file_path.stat().st_size
 
@@ -461,10 +507,11 @@ def read_pdf(path: str) -> dict[str, Any]:
         full_text = full_text[:MAX_PDF_TEXT_CHARS]
         truncated = True
 
-    relative_path = file_path.relative_to(PROJECT_ROOT).as_posix()
+    relative_path = file_path.name
 
     return {
         "path": relative_path,
+        "documents_dir": root_kind,
         "page_count": page_count,
         "text": full_text,
         "text_truncated": truncated,
@@ -477,9 +524,62 @@ def read_pdf(path: str) -> dict[str, Any]:
         "source": {
             "source_type": "pdf_text_extraction",
             "path": relative_path,
+            "documents_dir": root_kind,
             "extracted_at": _utc_timestamp(),
             "size_bytes": file_size,
             "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        },
+    }
+
+
+def list_documents() -> dict[str, Any]:
+    """List the PDF documents available in the configured directories."""
+
+    documents: list[dict[str, Any]] = []
+    truncated = False
+
+    for root, root_kind in _get_document_roots():
+        if truncated:
+            break
+
+        for file_path in sorted(root.rglob("*.pdf")):
+            try:
+                resolved_path = file_path.resolve()
+
+                if not resolved_path.is_relative_to(root):
+                    continue
+
+                file_stat = resolved_path.stat()
+
+                documents.append(
+                    {
+                        "name": resolved_path.relative_to(root).as_posix(),
+                        "size_bytes": file_stat.st_size,
+                        "modified_at": (
+                            datetime.fromtimestamp(
+                                file_stat.st_mtime,
+                                tz=timezone.utc,
+                            )
+                            .isoformat(timespec="seconds")
+                            .replace("+00:00", "Z")
+                        ),
+                        "documents_dir": root_kind,
+                    }
+                )
+            except OSError:
+                continue
+
+            if len(documents) >= MAX_DOCUMENT_LIST_RESULTS:
+                truncated = True
+                break
+
+    return {
+        "count": len(documents),
+        "truncated": truncated,
+        "documents": documents,
+        "source": {
+            "source_type": "document_listing",
+            "listed_at": _utc_timestamp(),
         },
     }
 
@@ -848,6 +948,13 @@ def execute_tool(name: str, arguments: str) -> str:
 
             target = parsed_arguments["path"]
             result = read_pdf(target)
+
+        elif name == "list_documents":
+            if set(parsed_arguments):
+                raise ValueError("list_documents takes no arguments.")
+
+            target = None
+            result = list_documents()
 
         elif name == "web_search":
             if set(parsed_arguments) - {"query", "max_results"}:
