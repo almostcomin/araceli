@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment (machine-specific)
+.venv/
+
+# Local application data (memory database - private, stays local)
+data/
+
+# Automatic file backups
+.backups/
+
+# OS artifacts
+Thumbs.db
+desktop.ini
