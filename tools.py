@@ -1,19 +1,37 @@
 import ast
 import hashlib
+import ipaddress
+import io
 import json
 import math
 import operator
 import shutil
+import socket
+import ssl
+import time
+import urllib.parse
+import urllib.request
 import uuid
 
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+
+from ddgs import DDGS
+from pypdf import PdfReader
 
 from memory import memory_store
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+try:
+    import truststore
+
+    _FETCH_SSL_CONTEXT = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+except Exception:
+    _FETCH_SSL_CONTEXT = ssl.create_default_context()
 
 BACKUP_ROOT = PROJECT_ROOT / ".backups"
 
@@ -41,6 +59,21 @@ MAX_EXPRESSION_LENGTH = 200
 MAX_RESULT_MAGNITUDE = 1e100
 MAX_EXPONENT = 100
 MAX_LIST_RESULTS = 200
+
+MAX_PDF_FILE_SIZE = 10 * 1024 * 1024
+MAX_PDF_PAGES = 50
+MAX_PDF_TEXT_CHARS = 100_000
+
+DEFAULT_WEB_RESULTS = 8
+MAX_WEB_RESULTS = 10
+MAX_QUERY_LENGTH = 400
+WEB_SEARCH_ATTEMPTS = 3
+WEB_SEARCH_RETRY_DELAY_SECONDS = 2.0
+
+FETCH_TIMEOUT_SECONDS = 15
+MAX_FETCH_BYTES = 512 * 1024
+MAX_FETCH_TEXT_CHARS = 24_000
+ALLOWED_FETCH_PORTS = {80, 443}
 
 
 _BINARY_OPERATORS = {
@@ -367,6 +400,333 @@ def update_memory(
     return {"memory": record.to_dict()}
 
 
+def _resolve_document_path(relative_path: str) -> Path:
+    """Resolve a path inside the private documents directory."""
+
+    if not isinstance(relative_path, str) or not relative_path.strip():
+        raise ValueError("A non-empty relative path is required.")
+
+    requested_path = Path(relative_path)
+
+    if requested_path.is_absolute():
+        raise ValueError("Absolute paths are not allowed.")
+
+    if ".." in requested_path.parts:
+        raise ValueError("Parent directory traversal is not allowed.")
+
+    documents_root = (PROJECT_ROOT / "data" / "documents").resolve()
+    resolved_path = (documents_root / requested_path).resolve()
+
+    if not resolved_path.is_relative_to(documents_root):
+        raise ValueError("Path is outside the documents directory.")
+
+    return resolved_path
+
+
+def read_pdf(path: str) -> dict[str, Any]:
+    """Extract text from a PDF in the private documents directory."""
+
+    file_path = _resolve_document_path(path)
+
+    if file_path.suffix.lower() != ".pdf":
+        raise ValueError("Only PDF documents are supported.")
+
+    if not file_path.is_file():
+        raise FileNotFoundError(
+            "Document not found. Paths are relative to "
+            "data/documents/."
+        )
+
+    file_size = file_path.stat().st_size
+
+    if file_size > MAX_PDF_FILE_SIZE:
+        raise ValueError("Document exceeds the maximum allowed size.")
+
+    raw_bytes = file_path.read_bytes()
+
+    reader = PdfReader(io.BytesIO(raw_bytes))
+
+    page_count = len(reader.pages)
+
+    if page_count > MAX_PDF_PAGES:
+        raise ValueError("Document exceeds the maximum allowed page count.")
+
+    pages_text = [page.extract_text() or "" for page in reader.pages]
+
+    full_text = "\n\n".join(pages_text)
+
+    truncated = False
+
+    if len(full_text) > MAX_PDF_TEXT_CHARS:
+        full_text = full_text[:MAX_PDF_TEXT_CHARS]
+        truncated = True
+
+    relative_path = file_path.relative_to(PROJECT_ROOT).as_posix()
+
+    return {
+        "path": relative_path,
+        "page_count": page_count,
+        "text": full_text,
+        "text_truncated": truncated,
+        "note": (
+            "No text could be extracted. The document may be a "
+            "scanned image without a text layer."
+            if not full_text.strip()
+            else None
+        ),
+        "source": {
+            "source_type": "pdf_text_extraction",
+            "path": relative_path,
+            "extracted_at": _utc_timestamp(),
+            "size_bytes": file_size,
+            "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        },
+    }
+
+
+def web_search(
+    query: str,
+    max_results: int = DEFAULT_WEB_RESULTS,
+) -> dict[str, Any]:
+    """Search the web with DuckDuckGo and return generic results."""
+
+    if not isinstance(query, str):
+        raise ValueError("query must be a string.")
+
+    query = query.strip()
+
+    if not query:
+        raise ValueError("query must not be empty.")
+
+    if len(query) > MAX_QUERY_LENGTH:
+        raise ValueError(
+            f"query exceeds the maximum length of "
+            f"{MAX_QUERY_LENGTH} characters."
+        )
+
+    if isinstance(max_results, bool) or not isinstance(max_results, int):
+        raise ValueError("max_results must be an integer.")
+
+    if not 1 <= max_results <= MAX_WEB_RESULTS:
+        raise ValueError(
+            f"max_results must be between 1 and {MAX_WEB_RESULTS}."
+        )
+
+    results: list[dict[str, Any]] = []
+    last_error: Exception | None = None
+
+    for attempt in range(WEB_SEARCH_ATTEMPTS):
+        try:
+            results = list(
+                DDGS().text(query, max_results=max_results)
+            )
+            break
+        except Exception as error:
+            last_error = error
+
+            if attempt + 1 < WEB_SEARCH_ATTEMPTS:
+                time.sleep(WEB_SEARCH_RETRY_DELAY_SECONDS)
+
+    else:
+        raise RuntimeError(f"Web search failed: {last_error}")
+
+    formatted = [
+        {
+            "title": result.get("title", ""),
+            "url": result.get("href", ""),
+            "snippet": result.get("body", ""),
+        }
+        for result in results
+        if result.get("href")
+    ]
+
+    return {
+        "query": query,
+        "count": len(formatted),
+        "results": formatted,
+        "source": {
+            "source_type": "web_search",
+            "engine": "duckduckgo",
+            "searched_at": _utc_timestamp(),
+        },
+    }
+
+
+_BLOCK_TAGS = {
+    "p", "div", "section", "article", "header", "footer", "nav",
+    "br", "li", "tr", "table", "ul", "ol", "h1", "h2", "h3", "h4",
+    "h5", "h6", "blockquote", "pre", "form",
+}
+
+_SKIP_TAGS = {"script", "style", "noscript", "template"}
+
+
+class _HTMLTextExtractor(HTMLParser):
+    """Extract readable text from an HTML document."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._chunks: list[str] = []
+        self._skip_depth = 0
+        self._in_title = False
+        self.title = ""
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag in _SKIP_TAGS:
+            self._skip_depth += 1
+        elif tag == "title":
+            self._in_title = True
+        elif tag in _BLOCK_TAGS:
+            self._chunks.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+        elif tag == "title":
+            self._in_title = False
+        elif tag in _BLOCK_TAGS:
+            self._chunks.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+
+        if self._in_title:
+            self.title += data
+        else:
+            self._chunks.append(data)
+
+    def get_text(self) -> str:
+        raw_text = "".join(self._chunks)
+        lines = [" ".join(line.split()) for line in raw_text.splitlines()]
+
+        cleaned: list[str] = []
+
+        for line in lines:
+            if line or (cleaned and cleaned[-1]):
+                cleaned.append(line)
+
+        return "\n".join(cleaned).strip()
+
+
+def _validate_public_http_url(url: str) -> str:
+    """Validate an http(s) URL that points at a public host."""
+
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("A non-empty URL is required.")
+
+    validated_url = url.strip()
+    parsed = urllib.parse.urlparse(validated_url)
+
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Only http and https URLs are allowed.")
+
+    if not parsed.hostname:
+        raise ValueError("The URL must include a host name.")
+
+    try:
+        port = parsed.port
+    except ValueError:
+        raise ValueError("The URL contains an invalid port.")
+
+    if port is not None and port not in ALLOWED_FETCH_PORTS:
+        raise ValueError("Only ports 80 and 443 are allowed.")
+
+    try:
+        address_infos = socket.getaddrinfo(
+            parsed.hostname,
+            port or (443 if parsed.scheme == "https" else 80),
+            proto=socket.IPPROTO_TCP,
+        )
+    except socket.gaierror as error:
+        raise ValueError(f"Could not resolve host: {error}")
+
+    for address_info in address_infos:
+        address = ipaddress.ip_address(address_info[4][0])
+
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_multicast
+            or address.is_unspecified
+        ):
+            raise ValueError(
+                "Requests to private or local addresses are not allowed."
+            )
+
+    return validated_url
+
+
+def web_fetch(url: str) -> dict[str, Any]:
+    """Fetch a public web page and return its readable text."""
+
+    validated_url = _validate_public_http_url(url)
+
+    request = urllib.request.Request(
+        validated_url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AraceliPersonalAssistant/0.1"
+            ),
+            "Accept": (
+                "text/html, application/xhtml+xml, text/plain;q=0.9, "
+                "*/*;q=0.5"
+            ),
+        },
+    )
+
+    with urllib.request.urlopen(
+        request,
+        timeout=FETCH_TIMEOUT_SECONDS,
+        context=_FETCH_SSL_CONTEXT,
+    ) as response:
+        final_url = response.geturl()
+        content_type = response.headers.get("Content-Type", "")
+        charset = response.headers.get_content_charset() or "utf-8"
+        raw_body = response.read(MAX_FETCH_BYTES + 1)
+
+    if len(raw_body) > MAX_FETCH_BYTES:
+        raise ValueError("The page exceeds the maximum allowed size.")
+
+    _validate_public_http_url(final_url)
+
+    content_type_lower = content_type.lower()
+
+    if "text/html" in content_type_lower or "xhtml" in content_type_lower:
+        extractor = _HTMLTextExtractor()
+        extractor.feed(raw_body.decode(charset, errors="replace"))
+        page_text = extractor.get_text()
+        page_title = extractor.title.strip()
+    elif "text/plain" in content_type_lower or not content_type_lower:
+        page_text = raw_body.decode(charset, errors="replace")
+        page_title = ""
+    else:
+        raise ValueError(f"Unsupported content type: {content_type}")
+
+    truncated = False
+
+    if len(page_text) > MAX_FETCH_TEXT_CHARS:
+        page_text = page_text[:MAX_FETCH_TEXT_CHARS]
+        truncated = True
+
+    return {
+        "url": final_url,
+        "title": page_title,
+        "text": page_text,
+        "text_truncated": truncated,
+        "source": {
+            "source_type": "web_page_fetch",
+            "url": final_url,
+            "fetched_at": _utc_timestamp(),
+            "content_type": content_type,
+            "size_bytes": len(raw_body),
+        },
+    }
+
+
 def execute_tool(name: str, arguments: str) -> str:
     """Execute a tool and return a Python-generated execution record."""
 
@@ -481,6 +841,33 @@ def execute_tool(name: str, arguments: str) -> str:
                 parsed_arguments.get("tags"),
                 parsed_arguments.get("status"),
             )
+
+        elif name == "read_pdf":
+            if set(parsed_arguments) != {"path"}:
+                raise ValueError("Invalid read_pdf arguments.")
+
+            target = parsed_arguments["path"]
+            result = read_pdf(target)
+
+        elif name == "web_search":
+            if set(parsed_arguments) - {"query", "max_results"}:
+                raise ValueError("Invalid web_search arguments.")
+
+            if "query" not in parsed_arguments:
+                raise ValueError("Missing web_search argument: query.")
+
+            target = parsed_arguments["query"]
+            result = web_search(
+                parsed_arguments["query"],
+                parsed_arguments.get("max_results", DEFAULT_WEB_RESULTS),
+            )
+
+        elif name == "web_fetch":
+            if set(parsed_arguments) != {"url"}:
+                raise ValueError("Invalid web_fetch arguments.")
+
+            target = parsed_arguments["url"]
+            result = web_fetch(target)
 
         else:
             raise ValueError(f"Unknown tool: {name}")

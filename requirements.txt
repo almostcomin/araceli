@@ -3,3 +3,6 @@
 #   python -m venv .venv
 #   .venv\Scripts\pip install -r requirements.txt
 openai==3.57.0
+pypdf==7.1.1
+ddgs==9.16.1
+truststore==0.10.5
