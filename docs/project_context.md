@@ -360,11 +360,13 @@ execution of tool calls embedded as text markup by the model, and
 removal of markup from final answers. - Console output resilient to
 characters outside the console encoding. - Color-coded console
 output through `console.py` (ANSI with Windows virtual-terminal
-activation, tty detection, and `NO_COLOR` support) using a
-three-color scheme: bold cyan for user prompts, magenta for the
-assistant's conversational output, and dim gray for every system
-message (tool executions, context usage, warnings, and console
-notices), including future ones. - Automated tests for PDF and
+activation, tty detection, and `NO_COLOR` support) using semantic
+roles: `USER_INPUT`/`USER_TEXT` (cyan, user), `ARACELI_INPUT`/
+`ARACELI_TEXT` (bright magenta, assistant output), `SYSTEM_MESSAGE`
+(dim gray, standard system messages including tool executions and
+context usage), and `SYSTEM_ERROR` (red, whole-line errors: failed
+tools, warnings, initialization and communication errors, and
+context usage at or above 90%). - Automated tests for PDF and
 web tools (128 tests total). - Project workspaces: user-side registry
 (`/project add`, `list`, `remove`), per-session activation (`use`,
 `off`), workspace-scoped file tools, and the per-project

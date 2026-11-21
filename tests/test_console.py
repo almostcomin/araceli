@@ -74,5 +74,53 @@ class InitColorsTestCase(unittest.TestCase):
         self.assertFalse(console.colors_enabled())
 
 
+class ColorRolesTestCase(unittest.TestCase):
+    """Semantic color roles must be tuples of defined ANSI codes."""
+
+    def test_roles_are_defined_code_tuples(self):
+        valid_codes = {
+            console.RESET,
+            console.BOLD,
+            console.DIM,
+            console.RED,
+            console.GREEN,
+            console.YELLOW,
+            console.CYAN,
+            console.MAGENTA,
+            console.BRIGHT_MAGENTA,
+        }
+
+        roles = {
+            "USER_INPUT": console.USER_INPUT,
+            "USER_TEXT": console.USER_TEXT,
+            "ARACELI_INPUT": console.ARACELI_INPUT,
+            "ARACELI_TEXT": console.ARACELI_TEXT,
+            "SYSTEM_MESSAGE": console.SYSTEM_MESSAGE,
+            "SYSTEM_ERROR": console.SYSTEM_ERROR,
+        }
+
+        for name, codes in roles.items():
+            with self.subTest(role=name):
+                self.assertGreaterEqual(len(codes), 1)
+                self.assertTrue(
+                    all(code in valid_codes for code in codes),
+                    f"{name} contains an unknown ANSI code",
+                )
+
+    def test_araceli_roles_use_bright_magenta(self):
+        self.assertIn(console.BRIGHT_MAGENTA, console.ARACELI_INPUT)
+        self.assertIn(console.BRIGHT_MAGENTA, console.ARACELI_TEXT)
+
+    def test_user_roles_use_cyan(self):
+        self.assertIn(console.CYAN, console.USER_INPUT)
+        self.assertIn(console.CYAN, console.USER_TEXT)
+
+    def test_system_error_uses_red(self):
+        self.assertIn(console.RED, console.SYSTEM_ERROR)
+
+    def test_system_message_uses_dim(self):
+        self.assertIn(console.DIM, console.SYSTEM_MESSAGE)
+
+
 if __name__ == "__main__":
     unittest.main()

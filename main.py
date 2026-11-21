@@ -51,10 +51,11 @@ from memory.memory_store import MAX_SNAPSHOT_LIMIT
 import projects
 
 from console import (
-    BOLD,
-    CYAN,
-    DIM,
-    MAGENTA,
+    ARACELI_INPUT,
+    ARACELI_TEXT,
+    SYSTEM_ERROR,
+    SYSTEM_MESSAGE,
+    USER_INPUT,
     init_colors,
     paint,
 )
@@ -754,7 +755,10 @@ def _print_tool_execution(tool_name: str, result_text: str) -> None:
     if error_message:
         line += f" | {error_message}"
 
-    print(paint(line, DIM))
+    if status == "error":
+        print(paint(line, *SYSTEM_ERROR))
+    else:
+        print(paint(line, *SYSTEM_MESSAGE))
 
 
 def _clean_answer(answer: str) -> str:
@@ -895,7 +899,7 @@ def generate_response(
                     paint(
                         "\n[WARNING] The model embedded tool-call markup "
                         "in its answer; it was removed.",
-                        DIM,
+                        *SYSTEM_ERROR,
                     )
                 )
 
@@ -930,12 +934,12 @@ def print_memory_listing() -> None:
         paint(
             f"\n[Memory] {active_count} active, "
             f"{superseded_count} superseded",
-            DIM,
+            *SYSTEM_MESSAGE,
         )
     )
 
     if not records:
-        print(paint("No active memories.", DIM))
+        print(paint("No active memories.", *SYSTEM_MESSAGE))
         return
 
     for record in records:
@@ -943,7 +947,7 @@ def print_memory_listing() -> None:
             paint(
                 f"  #{record.id} | {record.category} | {record.title} "
                 f"| updated {record.updated_at}",
-                DIM,
+                *SYSTEM_MESSAGE,
             )
         )
 
@@ -952,7 +956,7 @@ def print_memory_listing() -> None:
             paint(
                 f"  (showing the {len(records)} most recent of "
                 f"{active_count} active memories)",
-                DIM,
+                *SYSTEM_MESSAGE,
             )
         )
 
@@ -963,14 +967,14 @@ def forget_memory(memory_id: int) -> None:
     try:
         deleted = delete_memory(memory_id)
     except ValueError as error:
-        print(paint(f"\n[Memory] Could not delete: {error}", DIM))
+        print(paint(f"\n[Memory] Could not delete: {error}", *SYSTEM_ERROR))
         return
 
     print(
         paint(
             f"\n[Memory] Deleted #{deleted.id} | {deleted.category} | "
             f"{deleted.title}",
-            DIM,
+            *SYSTEM_MESSAGE,
         )
     )
 
@@ -1244,15 +1248,15 @@ def main() -> None:
 
     init_colors()
 
-    print(paint("=" * 55, DIM))
-    print(paint("             ARACELI - PERSONAL ASSISTANT", DIM))
-    print(paint("=" * 55, DIM))
+    print(paint("=" * 55, *SYSTEM_MESSAGE))
+    print(paint("             ARACELI - PERSONAL ASSISTANT", *SYSTEM_MESSAGE))
+    print(paint("=" * 55, *SYSTEM_MESSAGE))
 
     try:
         behavioral_prompt, behavioral_source = load_system_prompt()
         project_context, project_context_source = load_project_context()
     except Exception as error:
-        print(paint(f"\nInitialization error: {error}", DIM))
+        print(paint(f"\nInitialization error: {error}", *SYSTEM_ERROR))
         return
 
     memory_enabled = False
@@ -1265,11 +1269,14 @@ def main() -> None:
         print(
             paint(
                 f"\n[WARNING] Memory initialization failed: {error}",
-                DIM,
+                *SYSTEM_ERROR,
             )
         )
         print(
-            paint("Starting without persistent memory tools.", DIM)
+            paint(
+                "Starting without persistent memory tools.",
+                *SYSTEM_ERROR,
+            )
         )
 
     active_project: dict[str, Any] | None = None
@@ -1289,7 +1296,7 @@ def main() -> None:
                     paint(
                         f"\n[WARNING] Could not refresh memory "
                         f"snapshot: {error}",
-                        DIM,
+                        *SYSTEM_ERROR,
                     )
                 )
 
@@ -1317,42 +1324,54 @@ def main() -> None:
     try:
         client = create_client()
     except Exception as error:
-        print(paint(f"\nInitialization error: {error}", DIM))
+        print(paint(f"\nInitialization error: {error}", *SYSTEM_ERROR))
         return
 
     messages = create_conversation(system_prompt)
 
-    print(paint(f"\nModel: {MODEL}", DIM))
-    print(paint(f"Server: {BASE_URL}", DIM))
-    print(paint(f"Context length: {CONTEXT_LENGTH:,} tokens", DIM))
+    print(paint(f"\nModel: {MODEL}", *SYSTEM_MESSAGE))
+    print(paint(f"Server: {BASE_URL}", *SYSTEM_MESSAGE))
+    print(
+        paint(f"Context length: {CONTEXT_LENGTH:,} tokens", *SYSTEM_MESSAGE)
+    )
 
     if memory_enabled:
-        print(paint(f"Memory: enabled ({DEFAULT_DB_PATH.name})", DIM))
+        print(
+            paint(
+                f"Memory: enabled ({DEFAULT_DB_PATH.name})",
+                *SYSTEM_MESSAGE,
+            )
+        )
     else:
-        print(paint("Memory: disabled (initialization failed)", DIM))
+        print(
+            paint(
+                "Memory: disabled (initialization failed)",
+                *SYSTEM_MESSAGE,
+            )
+        )
 
-    print(paint("Active project: none", DIM))
+    print(paint("Active project: none", *SYSTEM_MESSAGE))
 
-    print(paint("\nAraceli is ready.", DIM))
-    print(paint("Commands:", DIM))
-    print(paint("\t/reset (new conversation)", DIM))
-    print(paint("\t/memory (list memories)", DIM))
-    print(paint("\t/forget <id> (delete memory)", DIM))
+    print(paint("\nAraceli is ready.", *SYSTEM_MESSAGE))
+    print(paint("Commands:", *SYSTEM_MESSAGE))
+    print(paint("\t/reset (new conversation)", *SYSTEM_MESSAGE))
+    print(paint("\t/memory (list memories)", *SYSTEM_MESSAGE))
+    print(paint("\t/forget <id> (delete memory)", *SYSTEM_MESSAGE))
     print(
         paint(
             "\t/project [status|list|info|add|remove|set|off] "
             "(manage project workspaces)",
-            DIM,
+            *SYSTEM_MESSAGE,
         )
     )
-    print(paint("\t/exit (quit)", DIM))
+    print(paint("\t/exit (quit)", *SYSTEM_MESSAGE))
 
-    print(paint("-" * 55, DIM))
+    print(paint("-" * 55, *SYSTEM_MESSAGE))
 
     while True:
 
         try:
-            user_input = input("\n" + paint("You: ", BOLD, CYAN)).strip()
+            user_input = input("\n" + paint("You: ", *USER_INPUT)).strip()
 
             if not user_input:
                 continue
@@ -1362,15 +1381,15 @@ def main() -> None:
             if command in ("/exit", "/quit", "/salir"):
                 print(
                     "\n"
-                    + paint("Araceli: ", BOLD, MAGENTA)
-                    + paint("Goodbye!", MAGENTA)
+                    + paint("Araceli: ", *ARACELI_INPUT)
+                    + paint("Goodbye!", *ARACELI_TEXT)
                 )
                 break
 
             if command == "/reset":
                 system_prompt = compose_prompt(active_project)
                 messages = create_conversation(system_prompt)
-                print(paint("\n[Conversation reset]", DIM))
+                print(paint("\n[Conversation reset]", *SYSTEM_MESSAGE))
                 continue
 
             if command == "/project" or command.startswith("/project "):
@@ -1379,7 +1398,7 @@ def main() -> None:
                     active_project,
                 )
 
-                print(paint(f"\n{message}", DIM))
+                print(paint(f"\n{message}", *SYSTEM_MESSAGE))
 
                 if changed:
                     active_project = new_active
@@ -1391,13 +1410,13 @@ def main() -> None:
 
                     system_prompt = compose_prompt(active_project)
                     messages = create_conversation(system_prompt)
-                    print(paint("\n[New conversation started]", DIM))
+                    print(paint("\n[New conversation started]", *SYSTEM_MESSAGE))
 
                 continue
 
             if command == "/memory":
                 if not memory_enabled:
-                    print(paint("\n[Memory] Memory is disabled.", DIM))
+                    print(paint("\n[Memory] Memory is disabled.", *SYSTEM_MESSAGE))
                     continue
 
                 try:
@@ -1407,7 +1426,7 @@ def main() -> None:
                         paint(
                             f"\n[Memory] Could not list memories: "
                             f"{error}",
-                            DIM,
+                            *SYSTEM_MESSAGE,
                         )
                     )
 
@@ -1415,7 +1434,7 @@ def main() -> None:
 
             if command.startswith("/forget"):
                 if not memory_enabled:
-                    print(paint("\n[Memory] Memory is disabled.", DIM))
+                    print(paint("\n[Memory] Memory is disabled.", *SYSTEM_MESSAGE))
                     continue
 
                 argument = user_input[len("/forget"):].strip()
@@ -1424,7 +1443,7 @@ def main() -> None:
                     print(
                         paint(
                             "\nUsage: /forget <id>  (see /memory for ids)",
-                            DIM,
+                            *SYSTEM_MESSAGE,
                         )
                     )
                     continue
@@ -1435,7 +1454,7 @@ def main() -> None:
                     print(
                         paint(
                             f"\n[Memory] Could not delete: {error}",
-                            DIM,
+                            *SYSTEM_MESSAGE,
                         )
                     )
 
@@ -1448,7 +1467,7 @@ def main() -> None:
                 "content": user_input,
             })
 
-            print("\n" + paint("Araceli: ", BOLD, MAGENTA), end="", flush=True)
+            print("\n" + paint("Araceli: ", *ARACELI_INPUT), end="", flush=True)
 
             try:
                 answer, context_tokens, finish_reason = generate_response(
@@ -1457,7 +1476,7 @@ def main() -> None:
                     tool_definitions,
                 )
 
-                print(paint(answer, MAGENTA))
+                print(paint(answer, *ARACELI_TEXT))
 
                 if context_tokens is not None:
                     available_tokens = max(
@@ -1469,16 +1488,21 @@ def main() -> None:
                         context_tokens / CONTEXT_LENGTH
                     ) * 100
 
+                    if usage_percentage >= 90:
+                        context_style = SYSTEM_ERROR
+                    else:
+                        context_style = SYSTEM_MESSAGE
+
                     print(
                         paint(
                             f"\nContext: {usage_percentage:.1f}% "
                             f"({context_tokens:,}/{CONTEXT_LENGTH:,} "
                             f"tokens) - {available_tokens:,} free",
-                            DIM,
+                            *context_style,
                         )
                     )
                 else:
-                    print(paint("\nContext usage: unavailable", DIM))
+                    print(paint("\nContext usage: unavailable", *SYSTEM_MESSAGE))
 
                 if finish_reason == "length":
                     print(
@@ -1488,7 +1512,7 @@ def main() -> None:
                             "(finish_reason: length).\n"
                             "This may be caused by MAX_TOKENS or the "
                             "context limit.",
-                            DIM,
+                            *SYSTEM_ERROR,
                         )
                     )
 
@@ -1497,11 +1521,11 @@ def main() -> None:
                 raise
 
         except KeyboardInterrupt:
-            print(paint("\n\n[Interrupted]", DIM))
+            print(paint("\n\n[Interrupted]", *SYSTEM_MESSAGE))
             continue
 
         except Exception as error:
-            print(paint(f"\n\nCommunication error: {error}", DIM))
+            print(paint(f"\n\nCommunication error: {error}", *SYSTEM_ERROR))
 
 
 if __name__ == "__main__":
