@@ -365,8 +365,7 @@ the conversation loop (command handling, model interaction).
     to the model so it can iterate until the suite is green. Git
     history remains the final safety net, and changes require an
     application restart to take effect.
-2.  Use Araceli on real tasks (starting with the energy bill analysis
-    that motivated the project) and record friction points.
+2.  Use Araceli on real tasks and record friction points.
 3.  Evaluate memory retrieval quality with real usage before
     considering FTS5 or embedding-based search.
 4.  Consider conversation summarization or pruning when context usage
