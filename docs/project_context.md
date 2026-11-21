@@ -262,16 +262,24 @@ them.
 -   **Project context file:** each project keeps the hidden file
     `.ARACELI_CONTEXT.md` at its root, written by Araceli through the
     normal `write_file` tool. It is the working memory of the project:
-    description and goal, working instructions received from the
-    user, work completed, decisions taken, pending tasks, and next
-    steps. When a project is activated (and on every `/reset`),
-    Python reads it and injects it into the system prompt as a
-    snapshot with provenance metadata (read timestamp, SHA-256,
-    status). A missing, empty, or oversized context file is reported
-    as such, and the model is instructed to create it as the first
-    step of the work. Araceli also generates result files (reports,
-    comparisons) and temporary working files inside the project when
-    the user asks for them.
+    description and goal, working instructions and method, decisions
+    taken, general work state, and next steps — kept as compact as
+    possible, since it is injected into every conversation and its
+    size permanently consumes context window. The model is instructed
+    to prefer general rules over enumerations (state derivable from
+    project files is not duplicated: for example, an instruction that
+    processed data is read from generated `.txt` files replaces any
+    list of analyzed documents), to reference files by name instead of
+    copying their contents, and to update the file only when something
+    not derivable from the files changes (new instructions, decisions,
+    phase changes, or closing a unit of work). When a project is
+    activated (and on every `/reset`), Python reads it and injects it
+    into the system prompt as a snapshot with provenance metadata
+    (read timestamp, SHA-256, status). A missing, empty, or oversized
+    context file is reported as such, and the model is instructed to
+    create it as the first step of the work. Araceli also generates
+    result files (reports, comparisons) and temporary working files
+    inside the project when the user asks for them.
 -   **Project summaries:** `/project info` (no argument) shows a
     read-only summary of the active project; `/project info <name>`
     shows it for any registered project without activating it. The
