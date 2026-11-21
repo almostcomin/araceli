@@ -1,0 +1,5 @@
+# Araceli dependencies
+# Rebuild the environment with:
+#   python -m venv .venv
+#   .venv\Scripts\pip install -r requirements.txt
+openai==3.57.0
