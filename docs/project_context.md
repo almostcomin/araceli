@@ -18,7 +18,11 @@ English.
 -   `config.py`: LM Studio connection and model-generation settings.
 -   `system_prompt.md`: behavioral instructions loaded as the system
     message.
--   `tools.py`: tool definitions, validation, execution, and dispatch.
+-   `tools.py`: tool implementations, validation, execution, dispatch,
+    and the active-workspace mechanism for file tools.
+-   `projects.py`: registry of user project workspaces
+    (`data/projects.json`) and reading of the per-project context file
+    (`ARACELI_CONTEXT.md`).
 -   `memory/`: persistent memory package.
     -   `memory/database.py`: SQLite connection management and schema
         initialization. The database file is `data/araceli.db`.
@@ -31,7 +35,8 @@ English.
     `test_pdf_web.py` for PDF and web tools) and tool documentation
     (`tool_test.md`).
 -   `data/`: application data directory; contains the SQLite memory
-    database (`data/araceli.db`), the internal documents directory
+    database (`data/araceli.db`), the projects registry
+    (`data/projects.json`), the internal documents directory
     (`data/documents/`), and the optional pointer file for the external
     documents directory (`data/documents_path.txt`). All are excluded
     from the model's general file access and from git.
@@ -57,9 +62,14 @@ application-side validation.
     conversation with the combined system prompt.
 6.  The console accepts user messages and supports these commands:
     `/reset` (new conversation), `/memory` (list active memories),
-    `/forget <id>` (physically delete a memory), and `/exit` (quit).
-    Memory management commands are handled entirely by Python and are
-    never exposed to the model.
+    `/forget <id>` (physically delete a memory), `/project`
+    (manage project workspaces: `status`, `list`, `add <path>`,
+    `remove <name>`, `use <name>`, `off`), and `/exit` (quit).
+    Memory management and project management commands are handled
+    entirely by Python and are never exposed to the model. Activating
+    or deactivating a project (or removing the active one) starts a
+    new conversation automatically, because the system prompt must
+    reflect the session scope.
 7.  For each user message, `main.py` sends the conversation to the
     configured model.
 8.  The model may request a tool. `main.py` dispatches it through
@@ -98,13 +108,16 @@ The model can request these tools:
     parsing. It does not execute arbitrary Python or support variables
     or function calls.
 -   `list_files(directory=".")`: lists up to 200 readable text files
-    using project-relative paths.
--   `read_file(path)`: reads an allowed UTF-8 text file within the
-    project, subject to extension and size restrictions.
--   `write_file(path, content)`: creates or updates files only under
-    `memory/`, `tests/`, and `docs/`. It supports an extension allowlist
-    and a 256 KB content limit. Before overwriting an existing file, it
-    creates a timestamped backup under `.backups/`.
+    in the current workspace, using workspace-relative paths.
+-   `read_file(path)`: reads an allowed UTF-8 text file in the current
+    workspace, subject to extension and size restrictions.
+-   `write_file(path, content)`: creates or updates files. In an
+    active project, anywhere inside the project directory; without
+    one, only under `memory/`, `tests/`, and `docs/` of the Araceli
+    repository. It supports an extension allowlist (text formats
+    including `.csv`, `.html`, `.xml`, `.log`) and a 256 KB content
+    limit. Before overwriting an existing file, it creates a
+    timestamped backup under `.backups/`.
 -   `save_memory(category, title, content, tags, source)`: stores a new
     persistent memory in SQLite. Categories are validated against a
     Python allowlist (`preference`, `personal`, `project`, `decision`,
@@ -207,6 +220,40 @@ evidence. The startup system prompt includes a snapshot section with
 metadata (load timestamp and record count) that distinguishes the
 snapshot from the current state retrievable through `search_memories`.
 
+## Project Workspaces
+
+Users can register project directories (outside the Araceli
+repository) and grant Araceli per-session access to exactly one of
+them.
+
+-   **Registry:** `data/projects.json` (gitignored). Managed only
+    through the `/project` console command: `add` validates that the
+    path is absolute, exists, is not a drive root or system directory,
+    is not the Araceli repository or inside/containing it, and is not
+    already registered (by path or by folder name, case-insensitive).
+    `remove` deletes the registry entry; the directory is untouched.
+-   **Active project:** at most one per session, not persisted across
+    application restarts. `/project use <name>` activates it and
+    `/project off` deactivates it; both start a new conversation.
+    While a project is active, `tools.set_workspace` (Python-side
+    only) scopes `list_files`, `read_file`, and `write_file` to the
+    project directory: paths are relative to its root, write access
+    covers the whole project, and repository-specific exclusions do
+    not apply. Without an active project, the tools operate on the
+    Araceli repository with the usual restrictions.
+-   **Project context file:** each project keeps
+    `ARACELI_CONTEXT.md` at its root, written by Araceli through the
+    normal `write_file` tool. When a project is activated (and on
+    every `/reset`), Python reads it and injects it into the system
+    prompt as a snapshot with provenance metadata (read timestamp,
+    SHA-256, status). A missing, empty, or oversized context file is
+    reported as such, and the model is instructed to create it as the
+    first step of the work.
+-   The model has no tool to change the workspace or the active
+    project; only the user can, through console commands. Workspace
+    writes still produce backups under `.backups/` and are verified
+    by reading the bytes back.
+
 ## File Access and Security
 
 File tools use project-relative paths and restrict file extensions, file
@@ -274,7 +321,11 @@ OS-trust-store TLS. - Tool-call reliability hardening: 8 tool rounds,
 execution of tool calls embedded as text markup by the model, and
 removal of markup from final answers. - Console output resilient to
 characters outside the console encoding. - Automated tests for PDF and
-web tools (128 tests total).
+web tools (128 tests total). - Project workspaces: user-side registry
+(`/project add`, `list`, `remove`), per-session activation (`use`,
+`off`), workspace-scoped file tools, and the per-project
+`ARACELI_CONTEXT.md` context file with snapshot injection (164 tests
+total).
 
 Not implemented: - Conversation summarization, pruning, or compaction. -
 Automatic discovery of the

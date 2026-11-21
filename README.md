@@ -22,7 +22,9 @@ chatbot with predefined commands. Its core capabilities:
   resets and application restarts.
 - **File access** under strict Python-enforced permissions: allowed
   extensions, size limits, excluded directories, and automatic
-  backups before every overwrite.
+  backups before every overwrite. When a user activates one of their
+  registered project workspaces, the file tools operate inside that
+  project for the session.
 - **Private document analysis**: PDF text extraction from a private
   documents directory that no other tool can reach.
 - **Controlled web research**: generic web searches and page reading
@@ -113,7 +115,28 @@ Console commands:
 | `/reset` | Start a new conversation (memory snapshot is refreshed) |
 | `/memory` | List active memories with ids, categories and titles |
 | `/forget <id>` | Physically delete a memory by id |
+| `/project` | Manage project workspaces (see below) |
 | `/exit` | Quit the application |
+
+### Project workspaces
+
+You can register your own project directories and grant Araceli
+per-session access to one of them:
+
+```text
+/project add D:\MyFolder     Register a project directory
+/project list                List registered projects
+/project use MyFolder        Activate it (new conversation starts)
+/project off                 Deactivate (back to no active project)
+/project remove MyFolder     Remove it from the registry
+```
+
+While a project is active, the file tools operate inside its
+directory (read, list, and write anywhere in the project). Araceli
+maintains an `ARACELI_CONTEXT.md` file at the project root with the
+project description, progress, decisions, and next steps, so work can
+resume in future sessions. The model has no tool to change the active
+project; only you can.
 
 Every tool execution is shown in the console as a compact
 `[tool] name -> status` line, so you can see what the assistant
@@ -124,9 +147,9 @@ actually does and whether each operation succeeded.
 | Tool | Purpose |
 |---|---|
 | `calculate` | Restricted arithmetic evaluation (AST-based, no arbitrary code) |
-| `list_files` | List allowed text files in the project |
+| `list_files` | List allowed text files in the current workspace |
 | `read_file` | Read an allowed text file with SHA-256 provenance |
-| `write_file` | Write to `memory/`, `tests/`, or `docs/` with pre-overwrite backups |
+| `write_file` | Write files: whole active project, or `memory/`, `tests/`, `docs/` in the repository |
 | `save_memory` | Store a persistent memory (validated categories and limits) |
 | `search_memories` | Keyword search across persistent memories |
 | `update_memory` | Update or supersede a memory by id |
@@ -142,6 +165,7 @@ Araceli/
 ├── main.py              # Startup, console loop, tool-call handling
 ├── config.py            # LM Studio connection and generation settings
 ├── tools.py             # Tool implementations, validation, dispatch
+├── projects.py          # Project workspace registry
 ├── system_prompt.md     # Behavioral instructions (Spanish)
 ├── requirements.txt     # Pinned direct dependencies
 ├── memory/              # Persistent memory package (SQLite)
@@ -150,6 +174,7 @@ Araceli/
 │   └── memory_store.py  # Save, search, update, delete operations
 ├── data/                # Local data (gitignored)
 │   ├── araceli.db       # Memory database (created on first run)
+│   ├── projects.json    # Project workspace registry
 │   ├── documents/       # Internal PDF documents directory
 │   └── documents_path.txt  # Optional pointer to an external documents folder
 ├── tests/               # Automated test suite (unittest)
