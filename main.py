@@ -141,12 +141,13 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "read_pdf",
             "description": (
-                "Extract text from a PDF document in the configured "
-                "documents directories. The path is relative to those "
-                "directories, e.g. 'bill.pdf'. The result includes the "
-                "extracted text, page count and source metadata "
-                "(SHA-256, extraction timestamp). Scanned PDFs without "
-                "a text layer return no text."
+                "Extract text from a PDF document. Search order: the "
+                "active project directory if one is active, then the "
+                "configured documents directories. The path is "
+                "relative to those roots, e.g. 'bill.pdf'. The result "
+                "includes the extracted text, page count and source "
+                "metadata (SHA-256, extraction timestamp). Scanned "
+                "PDFs without a text layer return no text."
             ),
             "parameters": {
                 "type": "object",
@@ -154,7 +155,7 @@ BASE_TOOL_DEFINITIONS = [
                     "path": {
                         "type": "string",
                         "description": (
-                            "Path relative to the documents directories, "
+                            "Path relative to the document roots, "
                             "e.g. 'gas_bill_november.pdf'. Use "
                             "list_documents to discover available files."
                         ),
@@ -170,10 +171,11 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "list_documents",
             "description": (
-                "List the PDF documents available in the configured "
-                "documents directories, with name, size and modification "
-                "time. Use it to discover which documents can be read "
-                "with read_pdf. Takes no arguments."
+                "List the PDF documents available in the active "
+                "project (if any) and the configured documents "
+                "directories, with name, size and modification time. "
+                "Use it to discover which documents can be read with "
+                "read_pdf. Takes no arguments."
             ),
             "parameters": {
                 "type": "object",
@@ -611,13 +613,21 @@ def build_active_project_section(
         "This session has an active project workspace. While it is "
         "active, the file tools (list_files, read_file, write_file) "
         "operate on this project directory: paths are relative to the "
-        "project root, and write access covers the entire project.\n\n"
-        "Maintain the project context file ARACELI_CONTEXT.md at the "
-        "project root. It must contain the project description, "
-        "current progress, decisions taken, and next steps, so that "
-        "work can resume in a future session. Update it whenever there "
-        "is meaningful progress. Python reads it when the project is "
-        "activated.\n\n"
+        "project root, and write access covers the entire project. "
+        "read_pdf and list_documents also include the PDF documents "
+        "inside the project.\n\n"
+        "The working method for an active project is based on the "
+        "hidden context file .ARACELI_CONTEXT.md at the project root. "
+        "It is the working memory of the project: create it if it does "
+        "not exist, and update it as the user explains the purpose and "
+        "tasks of the project. It must contain at least: project "
+        "description and goal, working instructions received from the "
+        "user, work completed, decisions taken, pending tasks, and "
+        "next steps. Update it whenever there is meaningful progress "
+        "and before finishing a unit of work. When the user asks for "
+        "concrete results (a comparison, a report, a table), generate "
+        "the corresponding files inside the project with descriptive "
+        "names. Python reads this file when the project is activated.\n\n"
         "```json\n"
         f"{json.dumps(metadata, ensure_ascii=False, indent=2)}\n"
         "```\n\n"
@@ -631,7 +641,7 @@ def build_active_project_section(
     elif context_metadata.get("status") in ("not_found", "empty"):
         section += (
             "No usable project context file exists yet. Creating "
-            "ARACELI_CONTEXT.md at the project root is the first step "
+            ".ARACELI_CONTEXT.md at the project root is the first step "
             "of the work in this project."
         )
     else:

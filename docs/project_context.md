@@ -128,14 +128,15 @@ The model can request these tools:
     Returns active memories by default, most recently updated first.
 -   `update_memory(memory_id, ...)`: updates fields of an existing
     memory by id, including changing its status to `superseded`.
--   `read_pdf(path)`: extracts text from a PDF stored in the configured
-    documents directories. Paths are relative to those directories.
-    Limits: 10 MB, 50 pages, 100,000 extracted characters. Scanned PDFs
-    without a text layer return no text.
+-   `read_pdf(path)`: extracts text from a PDF document. Search order:
+    the active project directory (if one is active), then the
+    configured documents directories. Paths are relative to those
+    roots. Limits: 10 MB, 50 pages, 100,000 extracted characters.
+    Scanned PDFs without a text layer return no text.
 -   `list_documents()`: lists the PDF documents available in the
-    configured documents directories (name, size, modification time,
-    and which directory each belongs to). Only `.pdf` files are listed,
-    up to 100 entries.
+    active project (if any) and the configured documents directories
+    (name, size, modification time, and which root each belongs to).
+    Only `.pdf` files are listed, up to 100 entries.
 -   `web_search(query, max_results)`: generic web search through
     DuckDuckGo (`ddgs` package, no API key). Returns titles, URLs and
     snippets with provenance metadata. Retries transient failures up to
@@ -239,16 +240,23 @@ them.
     only) scopes `list_files`, `read_file`, and `write_file` to the
     project directory: paths are relative to its root, write access
     covers the whole project, and repository-specific exclusions do
-    not apply. Without an active project, the tools operate on the
-    Araceli repository with the usual restrictions.
--   **Project context file:** each project keeps
-    `ARACELI_CONTEXT.md` at its root, written by Araceli through the
-    normal `write_file` tool. When a project is activated (and on
-    every `/reset`), Python reads it and injects it into the system
-    prompt as a snapshot with provenance metadata (read timestamp,
-    SHA-256, status). A missing, empty, or oversized context file is
-    reported as such, and the model is instructed to create it as the
-    first step of the work.
+    not apply. `read_pdf` and `list_documents` treat the active
+    project directory as the primary documents root. Without an active
+    project, the tools operate on the Araceli repository with the
+    usual restrictions.
+-   **Project context file:** each project keeps the hidden file
+    `.ARACELI_CONTEXT.md` at its root, written by Araceli through the
+    normal `write_file` tool. It is the working memory of the project:
+    description and goal, working instructions received from the
+    user, work completed, decisions taken, pending tasks, and next
+    steps. When a project is activated (and on every `/reset`),
+    Python reads it and injects it into the system prompt as a
+    snapshot with provenance metadata (read timestamp, SHA-256,
+    status). A missing, empty, or oversized context file is reported
+    as such, and the model is instructed to create it as the first
+    step of the work. Araceli also generates result files (reports,
+    comparisons) and temporary working files inside the project when
+    the user asks for them.
 -   The model has no tool to change the workspace or the active
     project; only the user can, through console commands. Workspace
     writes still produce backups under `.backups/` and are verified

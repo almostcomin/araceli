@@ -324,6 +324,87 @@ class DocumentsDirectoryTestCase(TempProjectTestCase):
 
         self.assertEqual(error_envelope["execution"]["status"], "error")
 
+    def test_workspace_is_primary_document_root(self):
+        workspace = self.project_root / "my_project"
+        workspace.mkdir()
+        (workspace / "factura.pdf").write_bytes(_make_pdf("Workspace bill"))
+
+        tools.set_workspace(workspace)
+        self.addCleanup(tools.set_workspace, None)
+
+        result = read_pdf("factura.pdf")
+
+        self.assertIn("Workspace bill", result["text"])
+        self.assertEqual(result["documents_dir"], "workspace")
+        self.assertEqual(result["path"], "factura.pdf")
+
+    def test_workspace_priority_over_documents_dirs(self):
+        workspace = self.project_root / "my_project"
+        workspace.mkdir()
+        (workspace / "bill.pdf").write_bytes(_make_pdf("From workspace"))
+        (self.documents_dir / "bill.pdf").write_bytes(
+            _make_pdf("From documents")
+        )
+
+        tools.set_workspace(workspace)
+        self.addCleanup(tools.set_workspace, None)
+
+        result = read_pdf("bill.pdf")
+
+        self.assertIn("From workspace", result["text"])
+        self.assertEqual(result["documents_dir"], "workspace")
+
+    def test_documents_dir_fallback_with_active_workspace(self):
+        workspace = self.project_root / "my_project"
+        workspace.mkdir()
+
+        tools.set_workspace(workspace)
+        self.addCleanup(tools.set_workspace, None)
+
+        (self.documents_dir / "internal_bill.pdf").write_bytes(
+            _make_pdf("Internal document")
+        )
+
+        result = read_pdf("internal_bill.pdf")
+
+        self.assertIn("Internal document", result["text"])
+        self.assertEqual(result["documents_dir"], "internal")
+
+    def test_list_documents_includes_workspace_pdfs(self):
+        workspace = self.project_root / "my_project"
+        workspace.mkdir()
+        (workspace / "factura.pdf").write_bytes(_make_pdf("Workspace"))
+
+        tools.set_workspace(workspace)
+        self.addCleanup(tools.set_workspace, None)
+
+        from tools import list_documents
+
+        result = list_documents()
+
+        kinds = {
+            document["name"]: document["documents_dir"]
+            for document in result["documents"]
+        }
+
+        self.assertEqual(kinds.get("factura.pdf"), "workspace")
+
+    def test_context_file_is_hidden_and_readable(self):
+        workspace = self.project_root / "my_project"
+        workspace.mkdir()
+
+        tools.set_workspace(workspace)
+        self.addCleanup(tools.set_workspace, None)
+
+        from tools import write_file
+
+        result = write_file(
+            ".ARACELI_CONTEXT.md", "# Context\nInitial state."
+        )
+
+        self.assertTrue(result["operation"]["verified"])
+        self.assertEqual(result["path"], ".ARACELI_CONTEXT.md")
+
 
 class WebSearchTestCase(unittest.TestCase):
     """Tests for the DuckDuckGo search tool with a mocked engine."""

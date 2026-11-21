@@ -132,11 +132,14 @@ per-session access to one of them:
 ```
 
 While a project is active, the file tools operate inside its
-directory (read, list, and write anywhere in the project). Araceli
-maintains an `ARACELI_CONTEXT.md` file at the project root with the
-project description, progress, decisions, and next steps, so work can
-resume in future sessions. The model has no tool to change the active
-project; only you can.
+directory (read, list, and write anywhere in the project), and its
+PDF documents are readable through `read_pdf`. Araceli maintains a
+hidden `.ARACELI_CONTEXT.md` file at the project root — the working
+memory of the project (description, instructions received, progress,
+decisions, pending tasks) — so work can resume in future sessions,
+and generates result or temporary files inside the project when you
+ask for them. The model has no tool to change the active project;
+only you can.
 
 Every tool execution is shown in the console as a compact
 `[tool] name -> status` line, so you can see what the assistant

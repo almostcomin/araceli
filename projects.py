@@ -12,7 +12,7 @@ ARACELI_ROOT = Path(__file__).resolve().parent
 
 PROJECTS_FILE = ARACELI_ROOT / "data" / "projects.json"
 
-CONTEXT_FILE_NAME = "ARACELI_CONTEXT.md"
+CONTEXT_FILE_NAME = ".ARACELI_CONTEXT.md"
 
 MAX_CONTEXT_FILE_SIZE = 256 * 1024
 

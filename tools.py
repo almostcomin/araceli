@@ -466,12 +466,16 @@ def update_memory(
 def _get_document_roots() -> list[tuple[Path, str]]:
     """Return the configured document roots.
 
-    The external root is defined by the user in data/documents_path.txt
-    (a single line with an absolute path to a directory outside the
-    project). The internal root is data/documents/ inside the project.
+    When a project workspace is active, it is the primary documents
+    root. Additional roots come from data/documents_path.txt (a single
+    line with an absolute path to a directory outside the project) and
+    the internal data/documents/ directory.
     """
 
     roots: list[tuple[Path, str]] = []
+
+    if _ACTIVE_WORKSPACE is not None:
+        roots.append((_ACTIVE_WORKSPACE, "workspace"))
 
     pointer_path = PROJECT_ROOT / "data" / "documents_path.txt"
 
@@ -535,7 +539,7 @@ def _resolve_document_path(
 
 
 def read_pdf(path: str) -> dict[str, Any]:
-    """Extract text from a PDF in the configured documents directories."""
+    """Extract text from a PDF in the active workspace or documents directories."""
 
     if not isinstance(path, str) or not path.strip():
         raise ValueError("A non-empty relative path is required.")
@@ -595,7 +599,7 @@ def read_pdf(path: str) -> dict[str, Any]:
 
 
 def list_documents() -> dict[str, Any]:
-    """List the PDF documents available in the configured directories."""
+    """List PDF documents in the active workspace and documents directories."""
 
     documents: list[dict[str, Any]] = []
     truncated = False

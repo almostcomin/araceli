@@ -191,7 +191,7 @@ class ProjectContextTestCase(unittest.TestCase):
 
         self.assertIn("Progress so far.", content)
         self.assertEqual(metadata["status"], "loaded")
-        self.assertEqual(metadata["path"], "ARACELI_CONTEXT.md")
+        self.assertEqual(metadata["path"], ".ARACELI_CONTEXT.md")
         self.assertIn("sha256", metadata)
         self.assertTrue(metadata["read_at"].endswith("Z"))
 
@@ -240,8 +240,9 @@ class ActiveProjectSectionTestCase(unittest.TestCase):
         section = main.build_active_project_section(self.entry)
 
         self.assertIn("## Active Project — Demo", section)
-        self.assertIn("ARACELI_CONTEXT.md", section)
+        self.assertIn(".ARACELI_CONTEXT.md", section)
         self.assertIn("write access covers the entire project", section)
+        self.assertIn("working method", section)
 
     def test_section_includes_context_snapshot(self):
         context_path = (
