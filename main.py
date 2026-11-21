@@ -1,6 +1,8 @@
 import copy
 import hashlib
 import json
+import re
+import sys
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,7 +36,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / SYSTEM_PROMPT_FILE
 PROJECT_CONTEXT_PATH = ROOT_DIR / "docs" / "project_context.md"
 
-MAX_TOOL_ROUNDS = 5
+MAX_TOOL_ROUNDS = 8
 
 MEMORY_SNAPSHOT_LIMIT = 15
 MEMORY_CONTENT_PREVIEW_LENGTH = 300
@@ -121,6 +123,91 @@ BASE_TOOL_DEFINITIONS = [
                     "content": {"type": "string"},
                 },
                 "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_pdf",
+            "description": (
+                "Extract text from a PDF document stored in the "
+                "private documents directory (data/documents/). The "
+                "path is relative to that directory, e.g. 'bill.pdf'. "
+                "The result includes the extracted text, page count "
+                "and source metadata (SHA-256, extraction timestamp). "
+                "Scanned PDFs without a text layer return no text."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Path relative to data/documents/, "
+                            "e.g. 'gas_bill_november.pdf'."
+                        ),
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": (
+                "Search the web with generic, non-identifying queries "
+                "and return titles, URLs and snippets. Never include "
+                "private data (names, addresses, contract numbers, "
+                "consumption figures from private documents) in the "
+                "query. Use web_fetch to read a specific result page."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Generic search query in the appropriate "
+                            "language for the topic."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": (
+                            "Maximum results (1-10, default 8)."
+                        ),
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": (
+                "Fetch a public http(s) page and return its readable "
+                "text with the final URL and fetch timestamp. Only "
+                "public addresses on ports 80/443 are allowed. Use it "
+                "to read pages found with web_search and cite their "
+                "URLs as sources."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Full http(s) URL to fetch.",
+                    }
+                },
+                "required": ["url"],
                 "additionalProperties": False,
             },
         },
@@ -524,6 +611,62 @@ def _print_tool_execution(tool_name: str, result_text: str) -> None:
     print(line)
 
 
+def _clean_answer(answer: str) -> str:
+    """Remove model-emitted tool-call markup from a final answer."""
+
+    if "<tool_call>" not in answer:
+        return answer
+
+    cleaned = re.sub(
+        r"<tool_call>.*?</tool_call>", "", answer, flags=re.DOTALL
+    )
+    cleaned = cleaned.split("<tool_call>")[0]
+
+    return cleaned.strip()
+
+
+_EMBEDDED_CALL_PATTERN = re.compile(
+    r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+    re.DOTALL,
+)
+
+
+def _try_execute_embedded_call(
+    answer: str,
+    tool_definitions: list[dict[str, Any]],
+) -> tuple[str, str] | None:
+    """Execute a tool call the model embedded as text markup."""
+
+    match = _EMBEDDED_CALL_PATTERN.search(answer)
+
+    if match is None:
+        return None
+
+    try:
+        payload = json.loads(match.group(1))
+        name = payload.get("name")
+        arguments = payload.get("arguments", {})
+
+        if not isinstance(name, str) or not isinstance(arguments, dict):
+            return None
+
+        arguments_text = json.dumps(arguments)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    known_tools = {
+        definition["function"]["name"]
+        for definition in tool_definitions
+    }
+
+    if name not in known_tools:
+        return None
+
+    result_text = execute_tool(name, arguments_text)
+
+    return result_text, name
+
+
 def generate_response(
     client: OpenAI,
     messages: list[dict[str, Any]],
@@ -570,6 +713,42 @@ def generate_response(
 
             if not answer:
                 raise RuntimeError("The model returned an empty response.")
+
+            if "<tool_call>" in answer:
+                executed = _try_execute_embedded_call(
+                    answer, tool_definitions
+                )
+
+                if executed is not None:
+                    result_text, called_name = executed
+
+                    _print_tool_execution(called_name, result_text)
+
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "[Tool execution notice] Your tool call "
+                            "was received as plain text and executed "
+                            "by Python. Use the tool_calls mechanism "
+                            "for tool calls. Execution result:\n"
+                            + result_text
+                        ),
+                    })
+
+                    continue
+
+                answer = _clean_answer(answer)
+
+                if not answer:
+                    raise RuntimeError(
+                        "The model returned a malformed response "
+                        "(embedded tool markup instead of an answer)."
+                    )
+
+                print(
+                    "\n[WARNING] The model embedded tool-call markup "
+                    "in its answer; it was removed."
+                )
 
             return answer.strip(), context_tokens, finish_reason
 
@@ -637,6 +816,13 @@ def forget_memory(memory_id: int) -> None:
 
 def main() -> None:
     """Application entry point."""
+
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except Exception:
+                pass
 
     print("=" * 55)
     print("             ARACELI - PERSONAL ASSISTANT")

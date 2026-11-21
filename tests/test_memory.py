@@ -717,5 +717,118 @@ class ConsoleMemoryCommandsTestCase(unittest.TestCase):
         self.assertIn("not found", text)
 
 
+_MARKUP_OPEN = "<tool_" + "call>"
+_MARKUP_CLOSE = "<" + "/tool_" + "call>"
+
+
+class AnswerCleanupTestCase(unittest.TestCase):
+    """Tests for removing model-emitted tool markup from answers."""
+
+    def test_answer_without_markup_is_unchanged(self):
+        answer = "A normal answer without markup."
+
+        self.assertEqual(main._clean_answer(answer), answer)
+
+    def test_paired_markup_block_is_removed(self):
+        answer = (
+            "Visible answer "
+            + _MARKUP_OPEN
+            + "hidden junk"
+            + _MARKUP_CLOSE
+            + " trailing text"
+        )
+
+        cleaned = main._clean_answer(answer)
+
+        self.assertEqual(cleaned, "Visible answer  trailing text")
+
+    def test_unpaired_markup_is_truncated(self):
+        answer = "Partial answer " + _MARKUP_OPEN + "unfinished junk"
+
+        cleaned = main._clean_answer(answer)
+
+        self.assertEqual(cleaned, "Partial answer")
+
+    def test_markup_only_answer_becomes_empty(self):
+        answer = _MARKUP_OPEN + "content" + _MARKUP_CLOSE
+
+        self.assertEqual(main._clean_answer(answer), "")
+
+    def test_multiline_markup_is_removed(self):
+        answer = (
+            "Answer\n"
+            + _MARKUP_OPEN
+            + "\nline one\nline two\n"
+            + _MARKUP_CLOSE
+        )
+
+        cleaned = main._clean_answer(answer)
+
+        self.assertEqual(cleaned, "Answer")
+
+
+class EmbeddedToolCallTestCase(unittest.TestCase):
+    """Tests for executing tool calls embedded as text markup."""
+
+    def _embedded(self, payload_json):
+        return _MARKUP_OPEN + payload_json + _MARKUP_CLOSE
+
+    def test_executes_valid_embedded_call(self):
+        answer = self._embedded(
+            '{"name": "calculate", "arguments": {"expression": "2+2*3"}}'
+        )
+
+        executed = main._try_execute_embedded_call(
+            answer, main.BASE_TOOL_DEFINITIONS
+        )
+
+        self.assertIsNotNone(executed)
+
+        result_text, name = executed
+
+        self.assertEqual(name, "calculate")
+
+        envelope = json.loads(result_text)
+
+        self.assertEqual(envelope["execution"]["status"], "success")
+        self.assertEqual(envelope["result"], 8)
+
+    def test_returns_none_for_plain_text(self):
+        self.assertIsNone(
+            main._try_execute_embedded_call(
+                "A normal answer.", main.BASE_TOOL_DEFINITIONS
+            )
+        )
+
+    def test_returns_none_for_invalid_json_payload(self):
+        answer = self._embedded("not json at all")
+
+        self.assertIsNone(
+            main._try_execute_embedded_call(
+                answer, main.BASE_TOOL_DEFINITIONS
+            )
+        )
+
+    def test_returns_none_for_unknown_tool(self):
+        answer = self._embedded(
+            '{"name": "nonexistent_tool", "arguments": {"x": 1}}'
+        )
+
+        self.assertIsNone(
+            main._try_execute_embedded_call(
+                answer, main.BASE_TOOL_DEFINITIONS
+            )
+        )
+
+    def test_returns_none_for_non_object_payload(self):
+        answer = self._embedded('{"name": 42, "arguments": "nope"}')
+
+        self.assertIsNone(
+            main._try_execute_embedded_call(
+                answer, main.BASE_TOOL_DEFINITIONS
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
