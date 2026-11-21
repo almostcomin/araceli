@@ -63,13 +63,14 @@ application-side validation.
 6.  The console accepts user messages and supports these commands:
     `/reset` (new conversation), `/memory` (list active memories),
     `/forget <id>` (physically delete a memory), `/project`
-    (manage project workspaces: `status`, `list`, `add <path>`,
-    `remove <name>`, `use <name>`, `off`), and `/exit` (quit).
-    Memory management and project management commands are handled
-    entirely by Python and are never exposed to the model. Activating
-    or deactivating a project (or removing the active one) starts a
-    new conversation automatically, because the system prompt must
-    reflect the session scope.
+    (manage project workspaces: `status`, `list`, `info [name]`,
+    `add <path>`, `remove <name>`, `use <name>`, `off`), and `/exit`
+    (quit). Memory management and project management commands are
+    handled entirely by Python and are never exposed to the model.
+    Activating or deactivating a project (or removing the active one)
+    starts a new conversation automatically, because the system prompt
+    must reflect the session scope. `/project info` never changes the
+    workspace or the conversation.
 7.  For each user message, `main.py` sends the conversation to the
     configured model.
 8.  The model may request a tool. `main.py` dispatches it through
@@ -257,6 +258,13 @@ them.
     step of the work. Araceli also generates result files (reports,
     comparisons) and temporary working files inside the project when
     the user asks for them.
+-   **Project summaries:** `/project info` (no argument) shows a
+    read-only summary of the active project; `/project info <name>`
+    shows it for any registered project without activating it. The
+    summary includes the project name, directory, registration date,
+    a capped file count (with PDF count), and the content of the
+    context file with its status. It never changes the workspace or
+    the conversation.
 -   The model has no tool to change the workspace or the active
     project; only the user can, through console commands. Workspace
     writes still produce backups under `.backups/` and are verified
@@ -347,13 +355,23 @@ the conversation loop (command handling, model interaction).
 
 ## Development Priorities
 
-1.  Use Araceli on real tasks (starting with the energy bill analysis
+1.  Build the self-development capability (roadmap Phase 5): a
+    user-gated development mode (`/dev on` / `/dev off`, default off)
+    exposing a `write_source` tool restricted to an allowlist of
+    source files (root `*.py`, `memory/`, `tests/`, `system_prompt.md`,
+    `docs/`; excluding `config.py`, `requirements.txt`, and `data/`).
+    Every write must produce a backup, pass syntax validation, and
+    run the full test suite automatically, with the result returned
+    to the model so it can iterate until the suite is green. Git
+    history remains the final safety net, and changes require an
+    application restart to take effect.
+2.  Use Araceli on real tasks (starting with the energy bill analysis
     that motivated the project) and record friction points.
-2.  Evaluate memory retrieval quality with real usage before
+3.  Evaluate memory retrieval quality with real usage before
     considering FTS5 or embedding-based search.
-3.  Consider conversation summarization or pruning when context usage
+4.  Consider conversation summarization or pruning when context usage
     approaches the configured limit.
-4.  Revisit a persistent execution log only if unexplained tool or file
+5.  Revisit a persistent execution log only if unexplained tool or file
     incidents occur.
 This document describes the current implementation. When it conflicts
 with source code, inspect the code and update this document. Clearly

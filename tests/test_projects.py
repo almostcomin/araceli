@@ -264,5 +264,111 @@ class ActiveProjectSectionTestCase(unittest.TestCase):
         self.assertIn("first step", section)
 
 
+class ProjectInfoCommandTestCase(unittest.TestCase):
+    """Tests for the /project info console command."""
+
+    def setUp(self):
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_dir.cleanup)
+
+        self.base = Path(self._temp_dir.name)
+        self.registry_path = self.base / "data" / "projects.json"
+
+        self.araceli_root = self.base / "araceli"
+        self.araceli_root.mkdir()
+
+        root_patcher = mock.patch.object(
+            projects, "ARACELI_ROOT", self.araceli_root
+        )
+        root_patcher.start()
+        self.addCleanup(root_patcher.stop)
+
+        registry_patcher = mock.patch.object(
+            projects, "PROJECTS_FILE", self.registry_path
+        )
+        registry_patcher.start()
+        self.addCleanup(registry_patcher.stop)
+
+        self.project_dir = self.base / "FacLuzGas"
+        (self.project_dir / "sub").mkdir(parents=True)
+        (self.project_dir / "factura.pdf").write_bytes(b"%PDF-1.4 fake")
+        (self.project_dir / "sub" / "result.md").write_text("data")
+
+        self.entry = add_project(str(self.project_dir))
+
+    def test_info_without_active_project(self):
+        message, active, changed = main._handle_project_command(
+            "/project info", None
+        )
+
+        self.assertIn("No active project", message)
+        self.assertIn("1 registered", message)
+        self.assertIsNone(active)
+        self.assertFalse(changed)
+
+    def test_info_active_project_with_context(self):
+        context_file = self.project_dir / projects.CONTEXT_FILE_NAME
+        context_file.write_text(
+            "# Context\n\nWork done: bill analysis.\n"
+            "Pending: switch provider.",
+            encoding="utf-8",
+        )
+
+        message, active, changed = main._handle_project_command(
+            "/project info", self.entry
+        )
+
+        self.assertIn("Project: FacLuzGas (active)", message)
+        self.assertIn(str(self.project_dir), message)
+        self.assertIn("Work done: bill analysis.", message)
+        self.assertIn("Pending: switch provider.", message)
+        self.assertIn("Files: 3", message)
+        self.assertIn("(1 PDFs)", message)
+        self.assertEqual(active, self.entry)
+        self.assertFalse(changed)
+
+    def test_info_active_project_without_context(self):
+        message, _, _ = main._handle_project_command(
+            "/project info", self.entry
+        )
+
+        self.assertIn(projects.CONTEXT_FILE_NAME, message)
+        self.assertIn("does not exist yet", message)
+
+    def test_info_by_name_without_activating(self):
+        other_dir = self.base / "Other"
+        other_dir.mkdir()
+        (other_dir / projects.CONTEXT_FILE_NAME).write_text(
+            "# Other context", encoding="utf-8"
+        )
+        add_project(str(other_dir))
+
+        message, active, changed = main._handle_project_command(
+            "/project info other", self.entry
+        )
+
+        self.assertIn("Project: Other", message)
+        self.assertIn("# Other context", message)
+        self.assertNotIn("(active)", message)
+        self.assertEqual(active, self.entry)
+        self.assertFalse(changed)
+
+    def test_info_marks_active_project_by_name(self):
+        message, _, _ = main._handle_project_command(
+            "/project info facluzgas", self.entry
+        )
+
+        self.assertIn("(active)", message)
+
+    def test_info_with_unknown_name(self):
+        message, active, changed = main._handle_project_command(
+            "/project info ghost", None
+        )
+
+        self.assertIn("No project is registered", message)
+        self.assertIsNone(active)
+        self.assertFalse(changed)
+
+
 if __name__ == "__main__":
     unittest.main()

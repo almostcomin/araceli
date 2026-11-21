@@ -126,6 +126,7 @@ per-session access to one of them:
 ```text
 /project add D:\MyFolder     Register a project directory
 /project list                List registered projects
+/project info [name]         Show a project summary (context, progress, pending work)
 /project use MyFolder        Activate it (new conversation starts)
 /project off                 Deactivate (back to no active project)
 /project remove MyFolder     Remove it from the registry

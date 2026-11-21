@@ -932,9 +932,74 @@ def forget_memory(memory_id: int) -> None:
 
 
 _PROJECT_USAGE = (
-    "Usage: /project [status | list | add <path> | remove <name> | "
-    "use <name> | off]"
+    "Usage: /project [status | list | info [name] | add <path> | "
+    "remove <name> | use <name> | off]"
 )
+
+_PROJECT_FILE_COUNT_CAP = 500
+
+
+def _format_project_info(project: dict[str, Any], is_active: bool) -> str:
+    """Format a read-only project summary for /project info."""
+
+    context_text, context_metadata = projects.read_project_context(project)
+
+    directory = Path(project["path"])
+
+    file_count = 0
+    pdf_count = 0
+    count_capped = False
+
+    try:
+        for file_path in directory.rglob("*"):
+            if not file_path.is_file():
+                continue
+
+            file_count += 1
+
+            if file_path.suffix.lower() == ".pdf":
+                pdf_count += 1
+
+            if file_count >= _PROJECT_FILE_COUNT_CAP:
+                count_capped = True
+                break
+    except OSError:
+        pass
+
+    status_text = " (active)" if is_active else ""
+
+    lines = [
+        f"Project: {project['name']}{status_text}",
+        f"Directory: {project['path']}",
+        f"Registered: {project.get('added_at', 'unknown')}",
+        f"Files: {file_count}{'+' if count_capped else ''} "
+        f"({pdf_count} PDFs)",
+        "",
+    ]
+
+    if context_text:
+        size_kb = context_metadata.get("size_bytes", 0) / 1024
+
+        lines.append(
+            f"--- {projects.CONTEXT_FILE_NAME} "
+            f"({context_metadata['status']}, {size_kb:.1f} KB) ---"
+        )
+        lines.append(context_text)
+    else:
+        status_description = {
+            "not_found": "does not exist yet",
+            "empty": "is empty",
+            "oversized": "is too large to display",
+            "load_error": "could not be read",
+        }.get(context_metadata.get("status"), "is not available")
+
+        lines.append(
+            f"{projects.CONTEXT_FILE_NAME} {status_description}. Ask "
+            "Araceli to create or update it while working on this "
+            "project."
+        )
+
+    return "\n".join(lines)
 
 
 def _handle_project_command(
@@ -998,6 +1063,55 @@ def _handle_project_command(
             )
 
         return ("\n".join(lines), active_project, False)
+
+    if subcommand == "info":
+        if argument:
+            entry = projects.find_project(argument)
+
+            if entry is None:
+                return (
+                    f"No project is registered with the name "
+                    f"'{argument}'.",
+                    active_project,
+                    False,
+                )
+
+            is_active = (
+                active_project is not None
+                and entry["name"] == active_project["name"]
+            )
+
+            return (
+                _format_project_info(entry, is_active),
+                active_project,
+                False,
+            )
+
+        if active_project is None:
+            registered = len(projects.load_projects())
+
+            if registered:
+                return (
+                    f"No active project ({registered} registered). "
+                    "Use /project use <name> to activate one, or "
+                    "/project info <name> to inspect one without "
+                    "activating it.",
+                    active_project,
+                    False,
+                )
+
+            return (
+                "No active project and no projects registered. Use "
+                "/project add <path> to register one.",
+                active_project,
+                False,
+            )
+
+        return (
+            _format_project_info(active_project, True),
+            active_project,
+            False,
+        )
 
     if subcommand == "add":
         try:
