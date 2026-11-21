@@ -1,5 +1,7 @@
 """Automated tests for the persistent memory system."""
 
+import contextlib
+import io
 import json
 import sqlite3
 import sys
@@ -12,6 +14,8 @@ from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+import main
 
 from memory import (
     MemoryRecord,
@@ -449,6 +453,82 @@ class MemoryToolDispatchTestCase(unittest.TestCase):
 
         self.assertEqual(envelope["execution"]["status"], "error")
         self.assertIn("not found", envelope["error"]["message"])
+
+
+class ToolConsoleVisibilityTestCase(unittest.TestCase):
+    """Tests for the console tool execution reporting."""
+
+    def _capture(self, tool_name, result_text):
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            main._print_tool_execution(tool_name, result_text)
+
+        return output.getvalue()
+
+    def test_success_line_contains_tool_status_and_target(self):
+        envelope = json.dumps(
+            {
+                "execution": {
+                    "id": "abc123",
+                    "tool": "save_memory",
+                    "status": "success",
+                    "target": "Sample title",
+                },
+                "result": {},
+            }
+        )
+
+        text = self._capture("save_memory", envelope)
+
+        self.assertIn("[tool] save_memory -> success", text)
+        self.assertIn("target: Sample title", text)
+
+    def test_error_line_contains_error_message(self):
+        envelope = json.dumps(
+            {
+                "execution": {
+                    "id": "abc123",
+                    "tool": "read_file",
+                    "status": "error",
+                    "target": "../secret.txt",
+                },
+                "error": {
+                    "type": "ValueError",
+                    "message": "Parent directory traversal is not allowed.",
+                },
+            }
+        )
+
+        text = self._capture("read_file", envelope)
+
+        self.assertIn("[tool] read_file -> error", text)
+        self.assertIn(
+            "Parent directory traversal is not allowed.", text
+        )
+
+    def test_line_without_target_omits_target_section(self):
+        envelope = json.dumps(
+            {
+                "execution": {
+                    "id": "abc123",
+                    "tool": "calculate",
+                    "status": "success",
+                    "target": None,
+                },
+                "result": 8,
+            }
+        )
+
+        text = self._capture("calculate", envelope)
+
+        self.assertIn("[tool] calculate -> success", text)
+        self.assertNotIn("target", text)
+
+    def test_invalid_result_text_does_not_raise(self):
+        text = self._capture("calculate", "not json")
+
+        self.assertIn("[tool] calculate -> unknown", text)
 
 
 if __name__ == "__main__":

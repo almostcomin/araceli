@@ -487,6 +487,40 @@ def create_conversation(
     ]
 
 
+def _print_tool_execution(tool_name: str, result_text: str) -> None:
+    """Print a compact console line describing a tool execution."""
+
+    status = "unknown"
+    target = None
+    error_message = None
+
+    try:
+        envelope = json.loads(result_text)
+        execution = envelope.get("execution")
+
+        if isinstance(execution, dict):
+            status = execution.get("status", "unknown")
+            target = execution.get("target")
+
+        error = envelope.get("error")
+
+        if isinstance(error, dict):
+            error_message = error.get("message")
+
+    except json.JSONDecodeError:
+        pass
+
+    line = f"\n[tool] {tool_name} -> {status}"
+
+    if target is not None:
+        line += f" | target: {target}"
+
+    if error_message:
+        line += f" | {error_message}"
+
+    print(line)
+
+
 def generate_response(
     client: OpenAI,
     messages: list[dict[str, Any]],
@@ -542,6 +576,8 @@ def generate_response(
             arguments = tool_call.function.arguments
 
             result_text = execute_tool(tool_name, arguments)
+
+            _print_tool_execution(tool_name, result_text)
 
             messages.append({
                 "role": "tool",

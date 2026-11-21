@@ -55,8 +55,9 @@ application-side validation.
 7.  For each user message, `main.py` sends the conversation to the
     configured model.
 8.  The model may request a tool. `main.py` dispatches it through
-    `tools.py`, appends the result, and continues the model interaction,
-    subject to `MAX_TOOL_ROUNDS`.
+    `tools.py`, appends the result, prints a compact console line
+    describing each execution (`[tool] name -> status`), and continues
+    the model interaction, subject to `MAX_TOOL_ROUNDS`.
 9.  The application displays the final answer and, when available,
     context-token usage. A `finish_reason` of `length` triggers a
     warning that the response may be incomplete.
