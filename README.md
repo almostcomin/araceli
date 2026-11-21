@@ -144,7 +144,12 @@ change the active project; only you can.
 
 Every tool execution is shown in the console as a compact
 `[tool] name -> status` line, so you can see what the assistant
-actually does and whether each operation succeeded.
+actually does and whether each operation succeeded. Console output is
+color-coded (user prompts, assistant replies, tool executions, and
+warnings use different colors); set the `NO_COLOR` environment
+variable to disable colors. Context usage is reported after each
+response as a single compact line that changes color as the context
+window fills up.
 
 ## Tools available to the model
 

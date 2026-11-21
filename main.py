@@ -50,6 +50,18 @@ from memory.memory_store import MAX_SNAPSHOT_LIMIT
 
 import projects
 
+from console import (
+    BOLD,
+    CYAN,
+    DIM,
+    GREEN,
+    MAGENTA,
+    RED,
+    YELLOW,
+    init_colors,
+    paint,
+)
+
 
 ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / SYSTEM_PROMPT_FILE
@@ -737,13 +749,23 @@ def _print_tool_execution(tool_name: str, result_text: str) -> None:
     except json.JSONDecodeError:
         pass
 
-    line = f"\n[tool] {tool_name} -> {status}"
+    if status == "success":
+        status_text = paint(status, GREEN)
+    elif status == "error":
+        status_text = paint(status, RED)
+    else:
+        status_text = paint(status, YELLOW)
+
+    line = (
+        f"\n{paint('[tool]', DIM)} {paint(tool_name, DIM)} "
+        f"-> {status_text}"
+    )
 
     if target is not None:
-        line += f" | target: {target}"
+        line += paint(f" | target: {target}", DIM)
 
     if error_message:
-        line += f" | {error_message}"
+        line += paint(f" | {error_message}", RED)
 
     print(line)
 
@@ -883,8 +905,11 @@ def generate_response(
                     )
 
                 print(
-                    "\n[WARNING] The model embedded tool-call markup "
-                    "in its answer; it was removed."
+                    paint(
+                        "\n[WARNING] The model embedded tool-call markup "
+                        "in its answer; it was removed.",
+                        YELLOW,
+                    )
                 )
 
             return answer.strip(), context_tokens, finish_reason
@@ -1218,9 +1243,11 @@ def main() -> None:
             except Exception:
                 pass
 
-    print("=" * 55)
-    print("             ARACELI - PERSONAL ASSISTANT")
-    print("=" * 55)
+    init_colors()
+
+    print(paint("=" * 55, DIM))
+    print(paint("             ARACELI - PERSONAL ASSISTANT", BOLD, CYAN))
+    print(paint("=" * 55, DIM))
 
     try:
         behavioral_prompt, behavioral_source = load_system_prompt()
@@ -1236,8 +1263,15 @@ def main() -> None:
         build_memory_snapshot_section()
         memory_enabled = True
     except Exception as error:
-        print(f"\n[WARNING] Memory initialization failed: {error}")
-        print("Starting without persistent memory tools.")
+        print(
+            paint(
+                f"\n[WARNING] Memory initialization failed: {error}",
+                YELLOW,
+            )
+        )
+        print(
+            paint("Starting without persistent memory tools.", YELLOW)
+        )
 
     active_project: dict[str, Any] | None = None
 
@@ -1253,8 +1287,11 @@ def main() -> None:
                 prompt_memory_section = build_memory_snapshot_section()
             except Exception as error:
                 print(
-                    f"\n[WARNING] Could not refresh memory snapshot: "
-                    f"{error}"
+                    paint(
+                        f"\n[WARNING] Could not refresh memory "
+                        f"snapshot: {error}",
+                        YELLOW,
+                    )
                 )
 
         project_section = (
@@ -1297,20 +1334,26 @@ def main() -> None:
 
     print("Active project: none")
 
-    print("\nAraceli is ready.")
-    print("Commands:")
-    print("\t/reset (new conversation)")
-    print("\t/memory (list memories)")
-    print("\t/forget <id> (delete memory)")
-    print("\t/project [status|list|info|add|remove|set|off] (manage project workspaces)")
-    print("\t/exit (quit)")
+    print(paint("\nAraceli is ready.", BOLD, CYAN))
+    print(paint("Commands:", DIM))
+    print(paint("\t/reset (new conversation)", DIM))
+    print(paint("\t/memory (list memories)", DIM))
+    print(paint("\t/forget <id> (delete memory)", DIM))
+    print(
+        paint(
+            "\t/project [status|list|info|add|remove|set|off] "
+            "(manage project workspaces)",
+            DIM,
+        )
+    )
+    print(paint("\t/exit (quit)", DIM))
 
-    print("-" * 55)
+    print(paint("-" * 55, DIM))
 
     while True:
 
         try:
-            user_input = input("\nYou: ").strip()
+            user_input = input("\n" + paint("You: ", BOLD, CYAN)).strip()
 
             if not user_input:
                 continue
@@ -1318,13 +1361,15 @@ def main() -> None:
             command = user_input.lower()
 
             if command in ("/exit", "/quit", "/salir"):
-                print("\nAraceli: Goodbye!")
+                print(
+                    "\n" + paint("Araceli: ", BOLD, MAGENTA) + "Goodbye!"
+                )
                 break
 
             if command == "/reset":
                 system_prompt = compose_prompt(active_project)
                 messages = create_conversation(system_prompt)
-                print("\n[Conversation reset]")
+                print(paint("\n[Conversation reset]", CYAN))
                 continue
 
             if command == "/project" or command.startswith("/project "):
@@ -1345,41 +1390,53 @@ def main() -> None:
 
                     system_prompt = compose_prompt(active_project)
                     messages = create_conversation(system_prompt)
-                    print("\n[New conversation started]")
+                    print(paint("\n[New conversation started]", CYAN))
 
                 continue
 
             if command == "/memory":
                 if not memory_enabled:
-                    print("\n[Memory] Memory is disabled.")
+                    print(paint("\n[Memory] Memory is disabled.", YELLOW))
                     continue
 
                 try:
                     print_memory_listing()
                 except Exception as error:
                     print(
-                        f"\n[Memory] Could not list memories: {error}"
+                        paint(
+                            f"\n[Memory] Could not list memories: "
+                            f"{error}",
+                            YELLOW,
+                        )
                     )
 
                 continue
 
             if command.startswith("/forget"):
                 if not memory_enabled:
-                    print("\n[Memory] Memory is disabled.")
+                    print(paint("\n[Memory] Memory is disabled.", YELLOW))
                     continue
 
                 argument = user_input[len("/forget"):].strip()
 
                 if not argument.isdigit():
                     print(
-                        "\nUsage: /forget <id>  (see /memory for ids)"
+                        paint(
+                            "\nUsage: /forget <id>  (see /memory for ids)",
+                            YELLOW,
+                        )
                     )
                     continue
 
                 try:
                     forget_memory(int(argument))
                 except Exception as error:
-                    print(f"\n[Memory] Could not delete: {error}")
+                    print(
+                        paint(
+                            f"\n[Memory] Could not delete: {error}",
+                            YELLOW,
+                        )
+                    )
 
                 continue
 
@@ -1390,7 +1447,7 @@ def main() -> None:
                 "content": user_input,
             })
 
-            print("\nAraceli: ", end="", flush=True)
+            print("\n" + paint("Araceli: ", BOLD, MAGENTA), end="", flush=True)
 
             try:
                 answer, context_tokens, finish_reason = generate_response(
@@ -1411,29 +1468,34 @@ def main() -> None:
                         context_tokens / CONTEXT_LENGTH
                     ) * 100
 
-                    available_percentage = max(
-                        0.0,
-                        100.0 - usage_percentage,
-                    )
+                    if usage_percentage >= 90:
+                        context_style = (RED, BOLD)
+                    elif usage_percentage >= 75:
+                        context_style = (YELLOW,)
+                    else:
+                        context_style = (DIM,)
 
                     print(
-                        f"\nContext usage: {usage_percentage:.1f}% "
-                        f"({context_tokens:,} / {CONTEXT_LENGTH:,} tokens)"
-                    )
-
-                    print(
-                        f"Available context: {available_percentage:.1f}% "
-                        f"({available_tokens:,} tokens)"
+                        paint(
+                            f"\nContext: {usage_percentage:.1f}% "
+                            f"({context_tokens:,}/{CONTEXT_LENGTH:,} "
+                            f"tokens) — {available_tokens:,} free",
+                            *context_style,
+                        )
                     )
                 else:
-                    print("\nContext usage: unavailable")
+                    print(paint("\nContext usage: unavailable", DIM))
 
                 if finish_reason == "length":
                     print(
-                        "\nWARNING: RESPONSE MAY BE INCOMPLETE\n"
-                        "The model reached a generation limit "
-                        "(finish_reason: length).\n"
-                        "This may be caused by MAX_TOKENS or the context limit."
+                        paint(
+                            "\nWARNING: RESPONSE MAY BE INCOMPLETE\n"
+                            "The model reached a generation limit "
+                            "(finish_reason: length).\n"
+                            "This may be caused by MAX_TOKENS or the "
+                            "context limit.",
+                            YELLOW,
+                        )
                     )
 
             except Exception:
@@ -1441,11 +1503,11 @@ def main() -> None:
                 raise
 
         except KeyboardInterrupt:
-            print("\n\n[Interrupted]")
+            print(paint("\n\n[Interrupted]", CYAN))
             continue
 
         except Exception as error:
-            print(f"\n\nCommunication error: {error}")
+            print(paint(f"\n\nCommunication error: {error}", YELLOW))
 
 
 if __name__ == "__main__":

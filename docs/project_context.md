@@ -358,7 +358,12 @@ directory. - Controlled web research through `web_search` and
 OS-trust-store TLS. - Tool-call reliability hardening: 8 tool rounds,
 execution of tool calls embedded as text markup by the model, and
 removal of markup from final answers. - Console output resilient to
-characters outside the console encoding. - Automated tests for PDF and
+characters outside the console encoding. - Color-coded console
+output through `console.py` (ANSI with Windows virtual-terminal
+activation, tty detection, and `NO_COLOR` support): colored user and
+assistant prompts, tool status (green/red/dim), yellow warnings, and
+a compact one-line context usage indicator with threshold colors
+(dim below 75%, yellow at 75%, red at 90%). - Automated tests for PDF and
 web tools (128 tests total). - Project workspaces: user-side registry
 (`/project add`, `list`, `remove`), per-session activation (`use`,
 `off`), workspace-scoped file tools, and the per-project
