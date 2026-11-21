@@ -38,6 +38,8 @@ BACKUP_ROOT = PROJECT_ROOT / ".backups"
 READABLE_EXTENSIONS = {
     ".py", ".md", ".sql", ".json", ".toml",
     ".txt", ".ini", ".cfg", ".yaml", ".yml",
+    ".csv", ".tsv", ".html", ".htm", ".xml",
+    ".svg", ".log",
 }
 
 WRITABLE_DIRECTORIES = {
@@ -103,6 +105,42 @@ def _utc_timestamp() -> str:
     )
 
 
+_ACTIVE_WORKSPACE: Path | None = None
+
+
+def set_workspace(workspace: Path | str | None) -> Path | None:
+    """Set the active project workspace for the file tools.
+
+    This is a Python-side control: the model has no tool to change
+    the workspace. Only the application (driven by the user) calls it.
+    """
+
+    global _ACTIVE_WORKSPACE
+
+    if workspace is None:
+        _ACTIVE_WORKSPACE = None
+        return None
+
+    _ACTIVE_WORKSPACE = Path(workspace).resolve()
+
+    return _ACTIVE_WORKSPACE
+
+
+def get_workspace() -> Path | None:
+    """Return the active project workspace, if any."""
+
+    return _ACTIVE_WORKSPACE
+
+
+def _workspace_root() -> Path:
+    """Return the root the file tools currently operate on."""
+
+    if _ACTIVE_WORKSPACE is not None:
+        return _ACTIVE_WORKSPACE
+
+    return PROJECT_ROOT
+
+
 def calculate(expression: str) -> int | float:
     """Evaluate a restricted arithmetic expression."""
 
@@ -157,7 +195,7 @@ def calculate(expression: str) -> int | float:
 
 
 def _resolve_project_path(relative_path: str) -> Path:
-    """Resolve a relative path and ensure it stays inside the project."""
+    """Resolve a relative path inside the current workspace."""
 
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise ValueError("A non-empty relative path is required.")
@@ -170,15 +208,20 @@ def _resolve_project_path(relative_path: str) -> Path:
     if ".." in requested_path.parts:
         raise ValueError("Parent directory traversal is not allowed.")
 
-    resolved_path = (PROJECT_ROOT / requested_path).resolve()
+    workspace_root = _workspace_root()
+    resolved_path = (workspace_root / requested_path).resolve()
 
-    if not resolved_path.is_relative_to(PROJECT_ROOT):
+    if not resolved_path.is_relative_to(workspace_root):
         raise ValueError("Path is outside the project directory.")
 
-    relative_parts = resolved_path.relative_to(PROJECT_ROOT).parts
+    if _ACTIVE_WORKSPACE is None:
+        relative_parts = resolved_path.relative_to(PROJECT_ROOT).parts
 
-    if any(part.casefold() in EXCLUDED_DIRECTORIES for part in relative_parts):
-        raise ValueError("Access to this directory is not allowed.")
+        if any(
+            part.casefold() in EXCLUDED_DIRECTORIES
+            for part in relative_parts
+        ):
+            raise ValueError("Access to this directory is not allowed.")
 
     return resolved_path
 
@@ -197,13 +240,14 @@ def _validate_readable_file(path: Path) -> None:
 
 
 def list_files(directory: str = ".") -> dict[str, Any]:
-    """List readable project files and record when the listing was made."""
+    """List readable workspace files and record when the listing was made."""
 
     root = _resolve_project_path(directory)
 
     if not root.is_dir():
         raise NotADirectoryError("The requested path is not a directory.")
 
+    workspace_root = _workspace_root()
     results = []
 
     for path in sorted(root.rglob("*")):
@@ -213,21 +257,24 @@ def list_files(directory: str = ".") -> dict[str, Any]:
         try:
             resolved = path.resolve()
 
-            if not resolved.is_relative_to(PROJECT_ROOT):
+            if not resolved.is_relative_to(workspace_root):
                 continue
 
-            relative_parts = resolved.relative_to(PROJECT_ROOT).parts
+            if _ACTIVE_WORKSPACE is None:
+                relative_parts = resolved.relative_to(PROJECT_ROOT).parts
 
-            if any(
-                part.casefold() in EXCLUDED_DIRECTORIES
-                for part in relative_parts
-            ):
-                continue
+                if any(
+                    part.casefold() in EXCLUDED_DIRECTORIES
+                    for part in relative_parts
+                ):
+                    continue
 
             if resolved.suffix.lower() not in READABLE_EXTENSIONS:
                 continue
 
-            results.append(resolved.relative_to(PROJECT_ROOT).as_posix())
+            results.append(
+                resolved.relative_to(workspace_root).as_posix()
+            )
 
         except (OSError, ValueError):
             continue
@@ -236,7 +283,9 @@ def list_files(directory: str = ".") -> dict[str, Any]:
             break
 
     return {
-        "directory": root.relative_to(PROJECT_ROOT).as_posix() or ".",
+        "directory": (
+            root.relative_to(workspace_root).as_posix() or "."
+        ),
         "files": results,
         "truncated": len(results) >= MAX_LIST_RESULTS,
         "source": {
@@ -281,13 +330,20 @@ def write_file(path: str, content: str) -> dict[str, Any]:
         raise ValueError("File content must be a string.")
 
     file_path = _resolve_project_path(path)
-    relative_path = file_path.relative_to(PROJECT_ROOT)
+    workspace_root = _workspace_root()
+    relative_path = file_path.relative_to(workspace_root)
 
     if not relative_path.parts:
         raise ValueError("A file path is required.")
 
-    if relative_path.parts[0].casefold() not in WRITABLE_DIRECTORIES:
-        raise PermissionError("Writing to this directory is not allowed.")
+    if _ACTIVE_WORKSPACE is None:
+        if (
+            relative_path.parts[0].casefold()
+            not in WRITABLE_DIRECTORIES
+        ):
+            raise PermissionError(
+                "Writing to this directory is not allowed."
+            )
 
     if file_path.suffix.lower() not in READABLE_EXTENSIONS:
         raise ValueError("File extension is not allowed.")
@@ -318,7 +374,13 @@ def write_file(path: str, content: str) -> dict[str, Any]:
             "%Y%m%dT%H%M%S%fZ"
         )
 
-        backup_path = BACKUP_ROOT / timestamp / relative_path
+        backup_branch = (
+            Path("workspace") if _ACTIVE_WORKSPACE is not None else Path()
+        )
+
+        backup_path = (
+            BACKUP_ROOT / timestamp / backup_branch / relative_path
+        )
 
         backup_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file_path, backup_path)

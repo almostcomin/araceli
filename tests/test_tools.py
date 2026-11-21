@@ -269,6 +269,82 @@ class FileToolsTestCase(TempProjectTestCase):
             list_files("data")
 
 
+class WorkspaceTestCase(TempProjectTestCase):
+    """Tests for file tools scoped to an active project workspace."""
+
+    def setUp(self):
+        super().setUp()
+
+        self.workspace = self.project_root / "demo_project"
+        (self.workspace / "data").mkdir(parents=True)
+
+        tools.set_workspace(self.workspace)
+        self.addCleanup(tools.set_workspace, None)
+
+    def test_set_and_clear_workspace(self):
+        self.assertEqual(
+            tools.get_workspace(), self.workspace.resolve()
+        )
+
+        tools.set_workspace(None)
+
+        self.assertIsNone(tools.get_workspace())
+
+    def test_write_anywhere_in_workspace(self):
+        result = write_file("notes.md", "Workspace note")
+
+        self.assertEqual(result["path"], "notes.md")
+        self.assertTrue(result["operation"]["verified"])
+        self.assertEqual(
+            (self.workspace / "notes.md").read_text(),
+            "Workspace note",
+        )
+
+    def test_write_in_workspace_subdirectories(self):
+        result = write_file("data/results.csv", "a,b\n1,2")
+
+        self.assertTrue(result["operation"]["verified"])
+        self.assertEqual(
+            (self.workspace / "data" / "results.csv").read_text(),
+            "a,b\n1,2",
+        )
+
+    def test_workspace_ignores_repo_excluded_directories(self):
+        (self.workspace / "data" / "table.csv").write_text("x")
+        (self.workspace / "araceli.md").write_text("y")
+
+        result = list_files(".")
+
+        self.assertIn("araceli.md", result["files"])
+        self.assertIn("data/table.csv", result["files"])
+
+    def test_workspace_rejects_traversal_and_absolute_paths(self):
+        with self.assertRaises(ValueError):
+            read_file("../outside.txt")
+
+        absolute = self.workspace / "araceli.md"
+
+        with self.assertRaises(ValueError):
+            read_file(str(absolute))
+
+    def test_workspace_backup_goes_to_backup_root(self):
+        write_file("araceli.md", "Old")
+
+        result = write_file("araceli.md", "New")
+
+        self.assertIsNotNone(result["backup"])
+        self.assertIn("workspace", result["backup"])
+
+        backup_path = self.project_root / result["backup"]
+        self.assertEqual(backup_path.read_text(), "Old")
+
+    def test_repo_mode_still_enforces_writable_directories(self):
+        tools.set_workspace(None)
+
+        with self.assertRaises(PermissionError):
+            write_file("main.py", "x")
+
+
 class FileToolDispatchTestCase(TempProjectTestCase):
     """Tests for file and calculator tools through execution envelopes."""
 
