@@ -38,6 +38,49 @@ Creates or updates a text file inside authorized directories.
 - Cannot write outside these authorized directories
 - File encoding is UTF-8
 
+### save_memory
+Stores a new persistent memory in the SQLite memory database
+(`data/araceli.db`). Memories persist across conversation resets and
+application restarts.
+
+**Parameters:**
+- `category` (required) — One of: `preference`, `personal`, `project`, `decision`, `task`, `fact`, `knowledge`
+- `title` (required) — Short identifying label (max 200 characters)
+- `content` (required) — The memory itself (max 4000 characters)
+- `tags` (optional) — Comma-separated keywords (max 200 characters)
+- `source` (optional) — Provenance note (max 500 characters)
+
+**Restrictions:**
+- Duplicate active memories with the same category and title are
+  rejected; the model must use `update_memory` instead
+- The database directory (`data/`) is not directly accessible to the
+  model through file tools
+
+### search_memories
+Searches persistent memories by keyword across title, content, and tags.
+
+**Parameters:**
+- `query` (required) — Keyword or phrase to search for (max 200 characters)
+- `category` (optional) — Category filter
+- `limit` (optional) — Maximum results, 1–50 (default 20)
+
+**Restrictions:**
+- Returns active memories by default, most recently updated first
+- SQL `LIKE` wildcards in the query are escaped and matched literally
+
+### update_memory
+Updates an existing persistent memory by id.
+
+**Parameters:**
+- `memory_id` (required) — Id of the memory to update
+- `title`, `content`, `category`, `tags`, `status` (optional) — At
+  least one is required. `status` accepts `active` or `superseded`.
+
+**Restrictions:**
+- Updates cannot create a duplicate of another active memory
+- There is no physical deletion; obsolete memories are marked
+  `superseded`
+
 ## Usage Notes
 
 1. All paths must be relative to the project root directory
