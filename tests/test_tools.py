@@ -344,6 +344,91 @@ class WorkspaceTestCase(TempProjectTestCase):
         with self.assertRaises(PermissionError):
             write_file("main.py", "x")
 
+    def test_workspace_listing_shows_all_files_and_directories(self):
+        (self.workspace / "notes.md").write_text("text")
+        (self.workspace / "factura.pdf").write_bytes(b"%PDF-1.4 fake")
+        (self.workspace / "image.png").write_bytes(
+            b"\x89PNG\r\n\x1a\n binary"
+        )
+        (self.workspace / "data").mkdir(exist_ok=True)
+        (self.workspace / "data" / "results.csv").write_text("a,b")
+
+        result = list_files(".")
+
+        self.assertIn("notes.md", result["files"])
+        self.assertIn("factura.pdf", result["files"])
+        self.assertIn("image.png", result["files"])
+        self.assertIn("data/results.csv", result["files"])
+        self.assertIn("data", result["directories"])
+        self.assertEqual(result["pdf_files"], ["factura.pdf"])
+        self.assertIn("read_pdf", result["note"])
+
+    def test_workspace_listing_without_pdfs_has_no_note(self):
+        (self.workspace / "notes.md").write_text("text")
+
+        result = list_files(".")
+
+        self.assertEqual(result["pdf_files"], [])
+        self.assertNotIn("note", result)
+
+    def test_workspace_reads_unknown_text_extension(self):
+        (self.workspace / "datos.dat").write_text(
+            "plain text content", encoding="utf-8"
+        )
+
+        result = read_file("datos.dat")
+
+        self.assertEqual(result["content"], "plain text content")
+        self.assertEqual(result["path"], "datos.dat")
+
+    def test_workspace_read_binary_reports_missing_tool(self):
+        (self.workspace / "image.png").write_bytes(
+            b"\x89PNG\r\n\x1a\n not text"
+        )
+
+        with self.assertRaises(ValueError) as context:
+            read_file("image.png")
+
+        self.assertIn("No reader tool is available", str(context.exception))
+        self.assertIn("ask the user", str(context.exception))
+
+    def test_workspace_read_pdf_redirects_to_read_pdf(self):
+        (self.workspace / "factura.pdf").write_bytes(b"%PDF-1.4 fake")
+
+        with self.assertRaises(ValueError) as context:
+            read_file("factura.pdf")
+
+        self.assertIn("Use read_pdf instead", str(context.exception))
+
+    def test_workspace_writes_any_extension(self):
+        result = write_file("salida.xyz", "custom format data")
+
+        self.assertTrue(result["operation"]["verified"])
+        self.assertEqual(
+            (self.workspace / "salida.xyz").read_text(),
+            "custom format data",
+        )
+
+    def test_repo_mode_read_still_enforces_extension_allowlist(self):
+        tools.set_workspace(None)
+
+        (self.project_root / "memory" / "blob.bin").write_bytes(b"\x00")
+
+        with self.assertRaises(ValueError) as context:
+            read_file("memory/blob.bin")
+
+        self.assertIn("extension is not allowed", str(context.exception))
+
+    def test_repo_mode_read_pdf_redirects_to_read_pdf(self):
+        tools.set_workspace(None)
+
+        (self.project_root / "memory" / "doc.pdf").write_bytes(b"fake")
+
+        with self.assertRaises(ValueError) as context:
+            read_file("memory/doc.pdf")
+
+        self.assertIn("Use read_pdf instead", str(context.exception))
+
 
 class FileToolDispatchTestCase(TempProjectTestCase):
     """Tests for file and calculator tools through execution envelopes."""

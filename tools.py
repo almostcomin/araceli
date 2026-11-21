@@ -229,18 +229,34 @@ def _resolve_project_path(relative_path: str) -> Path:
 def _validate_readable_file(path: Path) -> None:
     """Validate a file before reading it."""
 
-    if path.suffix.lower() not in READABLE_EXTENSIONS:
-        raise ValueError("File extension is not allowed.")
-
     if not path.is_file():
         raise FileNotFoundError("File not found.")
+
+    if path.suffix.lower() == _PDF_SUFFIX:
+        raise ValueError(
+            "PDF files cannot be read with read_file. "
+            "Use read_pdf instead."
+        )
+
+    if _ACTIVE_WORKSPACE is None and (
+        path.suffix.lower() not in READABLE_EXTENSIONS
+    ):
+        raise ValueError("File extension is not allowed.")
 
     if path.stat().st_size > MAX_FILE_SIZE:
         raise ValueError("File exceeds the maximum allowed size.")
 
 
+_PDF_SUFFIX = ".pdf"
+
+
 def list_files(directory: str = ".") -> dict[str, Any]:
-    """List readable workspace files and record when the listing was made."""
+    """List files in the current workspace with a time-stamped record.
+
+    In an active project, all files and directories are listed
+    regardless of extension, with PDF documents classified separately.
+    In the Araceli repository, only readable text files are listed.
+    """
 
     root = _resolve_project_path(directory)
 
@@ -248,19 +264,38 @@ def list_files(directory: str = ".") -> dict[str, Any]:
         raise NotADirectoryError("The requested path is not a directory.")
 
     workspace_root = _workspace_root()
-    results = []
+    workspace_mode = _ACTIVE_WORKSPACE is not None
+
+    files: list[str] = []
+    directories: list[str] = []
+    pdf_files: list[str] = []
+    truncated = False
 
     for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-
         try:
             resolved = path.resolve()
 
             if not resolved.is_relative_to(workspace_root):
                 continue
 
-            if _ACTIVE_WORKSPACE is None:
+            if resolved.is_dir():
+                if workspace_mode:
+                    relative_dir = resolved.relative_to(
+                        workspace_root
+                    ).as_posix()
+
+                    if (
+                        relative_dir != "."
+                        and len(directories) < MAX_LIST_RESULTS
+                    ):
+                        directories.append(relative_dir)
+
+                continue
+
+            if not resolved.is_file():
+                continue
+
+            if not workspace_mode:
                 relative_parts = resolved.relative_to(PROJECT_ROOT).parts
 
                 if any(
@@ -269,30 +304,45 @@ def list_files(directory: str = ".") -> dict[str, Any]:
                 ):
                     continue
 
-            if resolved.suffix.lower() not in READABLE_EXTENSIONS:
-                continue
+                if resolved.suffix.lower() not in READABLE_EXTENSIONS:
+                    continue
 
-            results.append(
-                resolved.relative_to(workspace_root).as_posix()
-            )
+            if len(files) >= MAX_LIST_RESULTS:
+                truncated = True
+                break
+
+            relative_path = resolved.relative_to(workspace_root).as_posix()
+            files.append(relative_path)
+
+            if workspace_mode and resolved.suffix.lower() == _PDF_SUFFIX:
+                pdf_files.append(relative_path)
 
         except (OSError, ValueError):
             continue
 
-        if len(results) >= MAX_LIST_RESULTS:
-            break
-
-    return {
-        "directory": (
-            root.relative_to(workspace_root).as_posix() or "."
-        ),
-        "files": results,
-        "truncated": len(results) >= MAX_LIST_RESULTS,
+    result: dict[str, Any] = {
+        "directory": root.relative_to(workspace_root).as_posix() or ".",
+        "files": files,
+        "truncated": truncated,
         "source": {
             "source_type": "current_directory_listing",
             "listed_at": _utc_timestamp(),
         },
     }
+
+    if workspace_mode:
+        result["directories"] = directories
+        result["pdf_files"] = pdf_files
+
+        if pdf_files:
+            result["note"] = (
+                f"{len(pdf_files)} PDF document(s): use read_pdf. "
+                "All other files: try read_file (UTF-8 text). Files "
+                "that cannot be decoded as text have no reader tool "
+                "yet; ask the user if you need them."
+            )
+
+    return result
 
 
 def read_file(path: str) -> dict[str, Any]:
@@ -306,8 +356,15 @@ def read_file(path: str) -> dict[str, Any]:
     if len(raw_content) > MAX_FILE_SIZE:
         raise ValueError("File exceeds the maximum allowed size.")
 
-    content = raw_content.decode("utf-8")
-    relative_path = file_path.relative_to(PROJECT_ROOT).as_posix()
+    try:
+        content = raw_content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(
+            "The file is not UTF-8 text (binary content or "
+            "unsupported encoding). No reader tool is available for "
+            "this content; ask the user if you need it."
+        )
+    relative_path = file_path.relative_to(_workspace_root()).as_posix()
 
     return {
         "path": relative_path,
@@ -345,7 +402,9 @@ def write_file(path: str, content: str) -> dict[str, Any]:
                 "Writing to this directory is not allowed."
             )
 
-    if file_path.suffix.lower() not in READABLE_EXTENSIONS:
+    if _ACTIVE_WORKSPACE is None and (
+        file_path.suffix.lower() not in READABLE_EXTENSIONS
+    ):
         raise ValueError("File extension is not allowed.")
 
     content_bytes = content.encode("utf-8")
@@ -464,18 +523,27 @@ def update_memory(
 
 
 def _get_document_roots() -> list[tuple[Path, str]]:
-    """Return the configured document roots.
+    """Return the configured document roots, deduplicated.
 
     When a project workspace is active, it is the primary documents
     root. Additional roots come from data/documents_path.txt (a single
     line with an absolute path to a directory outside the project) and
-    the internal data/documents/ directory.
+    the internal data/documents/ directory. Roots pointing at the same
+    directory are only included once, in priority order.
     """
 
     roots: list[tuple[Path, str]] = []
+    seen_roots: set[str] = set()
+
+    def _add_root(root_path: Path, root_kind: str) -> None:
+        key = str(root_path).casefold()
+
+        if key not in seen_roots:
+            seen_roots.add(key)
+            roots.append((root_path, root_kind))
 
     if _ACTIVE_WORKSPACE is not None:
-        roots.append((_ACTIVE_WORKSPACE, "workspace"))
+        _add_root(_ACTIVE_WORKSPACE, "workspace")
 
     pointer_path = PROJECT_ROOT / "data" / "documents_path.txt"
 
@@ -499,10 +567,10 @@ def _get_document_roots() -> list[tuple[Path, str]]:
                     "(check data/documents_path.txt)."
                 )
 
-            roots.append((external_root.resolve(), "external"))
+            _add_root(external_root.resolve(), "external")
 
     internal_root = (PROJECT_ROOT / "data" / "documents").resolve()
-    roots.append((internal_root, "internal"))
+    _add_root(internal_root, "internal")
 
     return roots
 

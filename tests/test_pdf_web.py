@@ -324,6 +324,24 @@ class DocumentsDirectoryTestCase(TempProjectTestCase):
 
         self.assertEqual(error_envelope["execution"]["status"], "error")
 
+    def test_document_roots_are_deduplicated(self):
+        (self.documents_dir / "single.pdf").write_bytes(_make_pdf("X"))
+
+        tools.set_workspace(self.documents_dir)
+        self.addCleanup(tools.set_workspace, None)
+
+        from tools import list_documents
+
+        result = list_documents()
+
+        names = [document["name"] for document in result["documents"]]
+
+        self.assertEqual(names.count("single.pdf"), 1)
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(
+            result["documents"][0]["documents_dir"], "workspace"
+        )
+
     def test_workspace_is_primary_document_root(self):
         workspace = self.project_root / "my_project"
         workspace.mkdir()

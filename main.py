@@ -86,12 +86,16 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "list_files",
             "description": (
-                "List readable text files in a directory of the "
-                "current workspace: the active project directory if "
-                "one is active, otherwise the Araceli repository. "
-                "The result includes the directory and the time at "
-                "which the listing was generated. Paths must be "
-                "relative to the workspace root."
+                "List files in a directory of the current workspace: "
+                "the active project directory if one is active, "
+                "otherwise the Araceli repository. In an active "
+                "project it lists ALL files and directories "
+                "regardless of extension, with PDF documents "
+                "classified in pdf_files (read them with read_pdf). "
+                "In the repository it lists readable text files only. "
+                "The result includes the time at which the listing was "
+                "generated. Paths must be relative to the workspace "
+                "root."
             ),
             "parameters": {
                 "type": "object",
@@ -113,10 +117,14 @@ BASE_TOOL_DEFINITIONS = [
                 "Read the current contents of a UTF-8 text file inside "
                 "the current workspace: the active project directory "
                 "if one is active, otherwise the Araceli repository. "
-                "The result includes Python-generated source metadata: "
-                "relative path, read timestamp, byte size, and SHA-256 "
-                "hash. This is a fresh disk read, not a startup "
-                "snapshot."
+                "In an active project any file is attempted as UTF-8 "
+                "text; PDF files must be read with read_pdf, and "
+                "files that cannot be decoded as text have no reader "
+                "tool (ask the user). In the repository only allowed "
+                "text extensions can be read. The result includes "
+                "Python-generated source metadata: relative path, "
+                "read timestamp, byte size, and SHA-256 hash. This is "
+                "a fresh disk read, not a startup snapshot."
             ),
             "parameters": {
                 "type": "object",
@@ -135,12 +143,13 @@ BASE_TOOL_DEFINITIONS = [
             "description": (
                 "Create or update a text file. In an active project, "
                 "writing is allowed anywhere inside the project "
-                "directory. Without an active project, writing is "
-                "restricted to the memory, tests and docs directories "
-                "of the Araceli repository. Existing files are backed "
-                "up automatically. The result reports the backup and "
-                "whether the written bytes were verified by reading "
-                "the file back."
+                "directory with any extension. Without an active "
+                "project, writing is restricted to the memory, tests "
+                "and docs directories of the Araceli repository with "
+                "a text extension allowlist. Existing files are "
+                "backed up automatically. The result reports the "
+                "backup and whether the written bytes were verified by "
+                "reading the file back."
             ),
             "parameters": {
                 "type": "object",
@@ -1152,7 +1161,7 @@ def _handle_project_command(
 
         return (message, None if was_active else active_project, was_active)
 
-    if subcommand == "use":
+    if subcommand == "set":
         if not argument:
             return (_PROJECT_USAGE, active_project, False)
 
@@ -1278,11 +1287,13 @@ def main() -> None:
     print("Active project: none")
 
     print("\nAraceli is ready.")
-    print(
-        "Commands: /reset (new conversation), /memory (list memories), "
-        "/forget <id> (delete memory), /project (manage project "
-        "workspaces), /exit (quit)"
-    )
+    print("Commands:")
+    print("\t/reset (new conversation)")
+    print("\t/memory (list memories)")
+    print("\t/forget <id> (delete memory)")
+    print("\t/project [status|list|info|add|remove|set|off] (manage project workspaces)")
+    print("\t/exit (quit)")
+
     print("-" * 55)
 
     while True:
