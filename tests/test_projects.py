@@ -243,6 +243,10 @@ class ActiveProjectSectionTestCase(unittest.TestCase):
         self.assertIn(".ARACELI_CONTEXT.md", section)
         self.assertIn("write access covers the entire project", section)
         self.assertIn("working method", section)
+        self.assertIn(
+            "immediately after analyzing each document", section
+        )
+        self.assertIn("An outdated context file is an error", section)
 
     def test_section_includes_context_snapshot(self):
         context_path = (
