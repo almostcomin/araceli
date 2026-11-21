@@ -108,17 +108,23 @@ The model can request these tools:
 -   `calculate(expression)`: evaluates arithmetic using restricted AST
     parsing. It does not execute arbitrary Python or support variables
     or function calls.
--   `list_files(directory=".")`: lists up to 200 readable text files
-    in the current workspace, using workspace-relative paths.
--   `read_file(path)`: reads an allowed UTF-8 text file in the current
-    workspace, subject to extension and size restrictions.
+-   `list_files(directory=".")`: lists files in the current workspace.
+    In an active project it lists all files and directories regardless
+    of extension (PDF documents classified in `pdf_files`, with a note
+    explaining how to read each kind); in the repository it lists up
+    to 200 readable text files with the usual exclusions.
+-   `read_file(path)`: reads a UTF-8 text file. In an active project
+    any file is attempted as UTF-8 text regardless of extension;
+    `.pdf` returns an error pointing to `read_pdf`, and binary or
+    non-UTF-8 content reports that no reader tool is available (the
+    model is instructed to ask the user in that case). In the
+    repository, only allowed text extensions. 256 KB limit.
 -   `write_file(path, content)`: creates or updates files. In an
-    active project, anywhere inside the project directory; without
-    one, only under `memory/`, `tests/`, and `docs/` of the Araceli
-    repository. It supports an extension allowlist (text formats
-    including `.csv`, `.html`, `.xml`, `.log`) and a 256 KB content
-    limit. Before overwriting an existing file, it creates a
-    timestamped backup under `.backups/`.
+    active project, anywhere inside the project directory with any
+    extension; without one, only under `memory/`, `tests/`, and
+    `docs/` of the Araceli repository with a text extension allowlist.
+    256 KB content limit. Before overwriting an existing file, it
+    creates a timestamped backup under `.backups/`.
 -   `save_memory(category, title, content, tags, source)`: stores a new
     persistent memory in SQLite. Categories are validated against a
     Python allowlist (`preference`, `personal`, `project`, `decision`,
@@ -153,14 +159,17 @@ beyond the web tools above.
 
 ## Private Documents and Web Access
 
-Documents are read from up to two configured roots:
+Documents are read from up to two or three configured roots,
+deduplicated by resolved path (a root pointing at the same directory
+as another is only included once):
 
-1.  **External directory** (optional, preferred on name collision):
-    the user defines it by writing a single absolute path into
-    `data/documents_path.txt` (gitignored, part of `data/`). This is
-    the intended place for real private documents that live outside
-    the repository, keeping them away from development tooling.
-2.  **Internal directory** (`data/documents/`, gitignored): useful for
+1.  **Active project directory** (when a project is active; primary
+    root on name collisions).
+2.  **External directory** (optional): the user defines it by writing
+    a single absolute path into `data/documents_path.txt` (gitignored,
+    part of `data/`). This keeps real private documents outside the
+    repository, away from development tooling.
+3.  **Internal directory** (`data/documents/`, gitignored): useful for
     test and demo documents.
 
 `read_pdf` is the only way to read documents from either root; it
@@ -238,13 +247,18 @@ them.
     application restarts. `/project use <name>` activates it and
     `/project off` deactivates it; both start a new conversation.
     While a project is active, `tools.set_workspace` (Python-side
-    only) scopes `list_files`, `read_file`, and `write_file` to the
-    project directory: paths are relative to its root, write access
-    covers the whole project, and repository-specific exclusions do
-    not apply. `read_pdf` and `list_documents` treat the active
+    only) scopes the file tools to the project directory with full
+    access: `list_files` lists every file and directory regardless of
+    extension (PDFs classified separately), `read_file` attempts any
+    file as UTF-8 text, and `write_file` allows any extension
+    anywhere inside the project. Files that no tool can read (binary
+    formats such as images) produce explicit errors instructing the
+    model to ask the user for a tool rather than assume their
+    contents. `read_pdf` and `list_documents` treat the active
     project directory as the primary documents root. Without an active
     project, the tools operate on the Araceli repository with the
-    usual restrictions.
+    usual restrictions (text extension allowlists, excluded
+    directories, restricted write targets).
 -   **Project context file:** each project keeps the hidden file
     `.ARACELI_CONTEXT.md` at its root, written by Araceli through the
     normal `write_file` tool. It is the working memory of the project:

@@ -3,32 +3,35 @@
 ## Available Tools
 
 ### list_files
-Lists readable text files in a directory of the current workspace:
-the active project directory if one is active, otherwise the Araceli
-repository.
+Lists files in a directory of the current workspace.
 
 **Parameters:**
 - `directory` (optional, default: `"."`) — Relative path to the target directory
 
-**Restrictions:**
-- Only returns readable text files
-- Paths must be relative to the workspace root
-- In the Araceli repository (no active project), excluded directories
-  are filtered out; in an active project, the whole project is listed
+**Behavior by mode:**
+- **Active project:** lists ALL files and directories regardless of
+  extension. PDF documents are additionally classified in `pdf_files`
+  (read them with `read_pdf`); a note explains how to read each kind.
+  Files that cannot be decoded as text have no reader tool yet.
+- **Araceli repository (no active project):** lists readable text
+  files only, with excluded directories filtered out
 
 ### read_file
-Reads a UTF-8 encoded text file from the current workspace: the active
-project directory if one is active, otherwise the Araceli repository.
+Reads a UTF-8 text file from the current workspace.
 
 **Parameters:**
 - `path` (required) — Relative path to the target file
 
-**Restrictions:**
-- File must exist within the workspace
-- Only reads text files in UTF-8 encoding with allowed extensions
+**Behavior by mode:**
+- **Active project:** any file is attempted as UTF-8 text regardless
+  of extension. `.pdf` files return an error pointing to `read_pdf`.
+  Binary or non-UTF-8 content returns an error explaining that no
+  reader tool is available (ask the user)
+- **Araceli repository:** only allowed text extensions
   (`.py`, `.md`, `.txt`, `.json`, `.csv`, `.html`, `.xml`, `.log`, ...)
-- Path must be relative to the workspace root (no traversal, no
-  absolute paths)
+
+- Maximum 256 KB; paths relative to the workspace root (no traversal,
+  no absolute paths); SHA-256 provenance metadata included
 
 ### write_file
 Creates or updates a text file in the current workspace.
@@ -38,13 +41,13 @@ Creates or updates a text file in the current workspace.
 - `content` (required) — Text content to write to the file
 
 **Restrictions:**
-- In an active project: allowed anywhere inside the project directory
-- In the Araceli repository (no active project): only `memory`,
-  `tests`, or `docs`
-- Extension allowlist (text formats) and a 256 KB content limit
-- Existing files are automatically backed up before modification
-  (backups live under `.backups/` in the Araceli repository)
-- Written bytes are verified by reading the file back
+- **Active project:** allowed anywhere inside the project directory
+  with any extension
+- **Araceli repository:** only `memory`, `tests`, or `docs`, with a
+  text extension allowlist
+- 256 KB content limit; existing files are automatically backed up
+  before modification (backups live under `.backups/` in the Araceli
+  repository); written bytes are verified by reading the file back
 
 ### save_memory
 Stores a new persistent memory in the SQLite memory database

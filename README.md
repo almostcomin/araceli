@@ -151,9 +151,9 @@ actually does and whether each operation succeeded.
 | Tool | Purpose |
 |---|---|
 | `calculate` | Restricted arithmetic evaluation (AST-based, no arbitrary code) |
-| `list_files` | List allowed text files in the current workspace |
-| `read_file` | Read an allowed text file with SHA-256 provenance |
-| `write_file` | Write files: whole active project, or `memory/`, `tests/`, `docs/` in the repository |
+| `list_files` | List ALL files and directories of the active project (text-only in the repository) |
+| `read_file` | Read any file as UTF-8 text in the active project (text allowlist in the repository) |
+| `write_file` | Write any extension anywhere in the active project; repository restricted |
 | `save_memory` | Store a persistent memory (validated categories and limits) |
 | `search_memories` | Keyword search across persistent memories |
 | `update_memory` | Update or supersede a memory by id |
