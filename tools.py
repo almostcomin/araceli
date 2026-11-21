@@ -3,6 +3,7 @@ import hashlib
 import ipaddress
 import io
 import json
+import logging
 import math
 import operator
 import shutil
@@ -12,6 +13,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+import warnings
 
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -22,6 +24,13 @@ from ddgs import DDGS
 from pypdf import PdfReader
 
 from memory import memory_store
+
+
+# pypdf emits per-font warnings when embedded fonts cannot be fully
+# parsed. They do not block text extraction, but they would flood the
+# console; errors still surface through the execution envelopes.
+logging.getLogger("pypdf").setLevel(logging.ERROR)
+warnings.filterwarnings("ignore", module=r"pypdf.*")
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent

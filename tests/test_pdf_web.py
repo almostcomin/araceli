@@ -690,5 +690,17 @@ class WebFetchTestCase(unittest.TestCase):
         )
 
 
+class PdfNoiseSuppressionTestCase(unittest.TestCase):
+    """pypdf library warnings must not flood the console."""
+
+    def test_pypdf_logger_level_is_error_or_higher(self):
+        import logging
+
+        self.assertGreaterEqual(
+            logging.getLogger("pypdf").getEffectiveLevel(),
+            logging.ERROR,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
