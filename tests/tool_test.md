@@ -81,6 +81,52 @@ Updates an existing persistent memory by id.
 - There is no physical deletion; obsolete memories are marked
   `superseded`
 
+### read_pdf
+Extracts text from a PDF document stored in the private documents
+directory (`data/documents/`).
+
+**Parameters:**
+- `path` (required) — Path relative to `data/documents/`, e.g. `bill.pdf`
+
+**Restrictions:**
+- Cannot escape the `data/documents/` directory (no traversal, no
+  absolute paths)
+- Only `.pdf` files
+- Maximum 10 MB and 50 pages; extracted text is capped at 100,000
+  characters
+- Scanned PDFs without a text layer return no text (a note explains it)
+- Returns source metadata: SHA-256, size, page count, extraction
+  timestamp
+
+### web_search
+Searches the web through DuckDuckGo (no API key).
+
+**Parameters:**
+- `query` (required) — Generic search query (max 400 characters). Must
+  never contain private data
+- `max_results` (optional) — Between 1 and 10 (default 8)
+
+**Restrictions:**
+- Queries must be generic and non-identifying; private data (names,
+  addresses, contract numbers, consumption figures) is forbidden
+- Retries transient failures up to three times before reporting an
+  error
+- Returns titles, URLs and snippets with provenance metadata
+
+### web_fetch
+Fetches a public web page and returns its readable text.
+
+**Parameters:**
+- `url` (required) — Full http(s) URL
+
+**Restrictions:**
+- Only http/https on ports 80 and 443
+- Only public addresses: private, loopback, link-local, reserved and
+  multicast addresses are rejected (including redirect targets)
+- Only `text/html`, `application/xhtml+xml` and `text/plain` content
+- Maximum 512 KB raw and 24,000 characters of text; 15 second timeout
+- Returns the final URL, content type, and fetch timestamp
+
 ## Usage Notes
 
 1. All paths must be relative to the project root directory

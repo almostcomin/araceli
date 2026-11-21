@@ -27,10 +27,13 @@ English.
         memory operations with Python-side validation.
 -   `docs/`: project documentation.
 -   `tests/`: automated tests (`test_memory.py` for the memory system,
-    `test_tools.py` for the calculator, file tools, and tool dispatch)
-    and tool documentation (`tool_test.md`).
+    `test_tools.py` for the calculator, file tools, and tool dispatch,
+    `test_pdf_web.py` for PDF and web tools) and tool documentation
+    (`tool_test.md`).
 -   `data/`: application data directory; contains the SQLite memory
-    database. Excluded from the model's file access and from git.
+    database (`data/araceli.db`) and the private documents directory
+    (`data/documents/`). Both are excluded from the model's general
+    file access and from git.
 
 The model proposes tool calls. Python code validates and executes them.
 Instructions given to the model are not a substitute for
@@ -61,7 +64,11 @@ application-side validation.
 8.  The model may request a tool. `main.py` dispatches it through
     `tools.py`, appends the result, prints a compact console line
     describing each execution (`[tool] name -> status`), and continues
-    the model interaction, subject to `MAX_TOOL_ROUNDS`.
+    the model interaction, subject to `MAX_TOOL_ROUNDS` (currently 8).
+    If the model emits a tool call as text markup instead of using the
+    tool_calls mechanism, Python parses it, executes it if valid, and
+    returns the result to the conversation; answers consisting only of
+    markup raise an error instead of reaching the user.
 9.  The application displays the final answer and, when available,
     context-token usage. A `finish_reason` of `length` triggers a
     warning that the response may be incomplete.
@@ -107,10 +114,47 @@ The model can request these tools:
     Returns active memories by default, most recently updated first.
 -   `update_memory(memory_id, ...)`: updates fields of an existing
     memory by id, including changing its status to `superseded`.
+-   `read_pdf(path)`: extracts text from a PDF stored in
+    `data/documents/`. Paths are relative to that directory. Limits:
+    10 MB, 50 pages, 100,000 extracted characters. Scanned PDFs
+    without a text layer return no text.
+-   `web_search(query, max_results)`: generic web search through
+    DuckDuckGo (`ddgs` package, no API key). Returns titles, URLs and
+    snippets with provenance metadata. Retries transient failures up to
+    three times.
+-   `web_fetch(url)`: fetches a public http(s) page and returns its
+    readable text (HTML stripped of scripts and styles) with the final
+    URL, content type, and fetch timestamp. Limits: 512 KB raw, 24,000
+    text characters, 15 second timeout.
 
 There is no confirmed tool for general shell execution, arbitrary Python
-execution, file deletion, memory deletion, internet search, or external
-API access.
+execution, file deletion, memory deletion, or external API access
+beyond the web tools above.
+
+## Private Documents and Web Access
+
+Private documents live in `data/documents/` (not tracked by git, not
+reachable through the general file tools). `read_pdf` is the only way
+to read them, and it cannot escape that directory.
+
+Web access rules enforced by Python:
+
+-   `web_fetch` only accepts http/https URLs on ports 80 and 443 that
+    resolve to public addresses; private, loopback, link-local,
+    reserved, and multicast addresses are rejected, including after
+    redirects.
+-   Only `text/html`, `application/xhtml+xml`, and `text/plain`
+    content types are returned; binaries are rejected.
+-   TLS verification uses the operating system trust store via
+    `truststore` (Windows certificate store).
+-   Known limitation: DNS rebinding between validation and fetch is
+    not prevented (time-of-check/time-of-use).
+
+Privacy model: private documents are analyzed locally; web queries
+must remain generic. The system prompt forbids including private data
+(names, addresses, contract numbers, consumption figures) in web
+searches. Python cannot validate this semantically, so the queries are
+visible to the user through the `[tool]` console lines.
 
 ## Persistent Memory
 
@@ -178,8 +222,10 @@ LM Studio must be running with the configured model loaded. The
 application does not currently retrieve the loaded model's effective
 context length automatically.
 
-The only direct dependency is `openai`, pinned in `requirements.txt`.
-Rebuild the environment with `python -m venv .venv` followed by
+The direct dependencies are `openai`, `pypdf` (PDF text extraction),
+`ddgs` (DuckDuckGo search), and `truststore` (Windows certificate
+store for TLS), pinned in `requirements.txt`. Rebuild the environment
+with `python -m venv .venv` followed by
 `.venv\Scripts\pip install -r requirements.txt`. Run the test suite
 with `python -m unittest discover -s tests -t .`.
 
@@ -200,26 +246,39 @@ Automated unit tests for the memory store and the memory tool dispatch
 (`tests/test_memory.py`, run with `python -m unittest discover -s tests
 -t .`). - Version control with git and a private GitHub repository;
 `data/`, `.venv/`, `.backups/`, and `__pycache__/` are not tracked. -
-`requirements.txt` pinning the direct dependency (`openai`). -
+`requirements.txt`
+pinning the direct dependency (`openai`). -
 Automated unit tests for the calculator, file tools, and tool dispatch
-in addition to the memory tests (91 tests total).
+in addition to the memory tests (91 tests total). - PDF document
+analysis through `read_pdf` over the private `data/documents/`
+directory. - Controlled web research through `web_search` and
+`web_fetch` with SSRF protections, content-type limits, and
+OS-trust-store TLS. - Tool-call reliability hardening: 8 tool rounds,
+execution of tool calls embedded as text markup by the model, and
+removal of markup from final answers. - Console output resilient to
+characters outside the console encoding. - Automated tests for PDF and
+web tools (128 tests total).
 
 Not implemented: - Conversation summarization, pruning, or compaction. -
-Internet search or external integrations. - Automatic discovery of the
+Automatic discovery of the
 effective LM Studio context length. - Physical memory deletion through
-model tools. - Semantic or embedding-based memory search. - A persistent
+model tools. - Semantic or embedding-based memory search. - OCR for
+scanned PDFs without a text layer. - Web search quality guarantees:
+some sites block automated access (HTTP 403) and the model must fall
+back to other sources. - A persistent
 tool-execution audit log (deliberately deferred). - Automated tests for
 the conversation loop (command handling, model interaction).
 
 ## Development Priorities
 
-1.  Evaluate memory retrieval quality with real usage before
+1.  Use Araceli on real tasks (starting with the energy bill analysis
+    that motivated the project) and record friction points.
+2.  Evaluate memory retrieval quality with real usage before
     considering FTS5 or embedding-based search.
-2.  Consider conversation summarization or pruning when context usage
+3.  Consider conversation summarization or pruning when context usage
     approaches the configured limit.
-3.  Revisit a persistent execution log only if unexplained tool or file
+4.  Revisit a persistent execution log only if unexplained tool or file
     incidents occur.
-
 This document describes the current implementation. When it conflicts
 with source code, inspect the code and update this document. Clearly
 distinguish implemented behavior from planned work.
