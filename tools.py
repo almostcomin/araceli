@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from memory import memory_store
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -312,6 +314,59 @@ def write_file(path: str, content: str) -> dict[str, Any]:
     }
 
 
+def save_memory(
+    category: str,
+    title: str,
+    content: str,
+    tags: str = "",
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Store a new persistent memory and return the saved record."""
+
+    record = memory_store.save_memory(category, title, content, tags, source)
+
+    return {"memory": record.to_dict()}
+
+
+def search_memories(
+    query: str,
+    category: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Search persistent memories by keyword."""
+
+    records = memory_store.search_memories(query, category, limit)
+
+    return {
+        "query": query,
+        "category": category,
+        "count": len(records),
+        "memories": [record.to_dict() for record in records],
+    }
+
+
+def update_memory(
+    memory_id: int,
+    title: str | None = None,
+    content: str | None = None,
+    category: str | None = None,
+    tags: str | None = None,
+    status: str | None = None,
+) -> dict[str, Any]:
+    """Update an existing persistent memory by id."""
+
+    record = memory_store.update_memory(
+        memory_id,
+        title,
+        content,
+        category,
+        tags,
+        status,
+    )
+
+    return {"memory": record.to_dict()}
+
+
 def execute_tool(name: str, arguments: str) -> str:
     """Execute a tool and return a Python-generated execution record."""
 
@@ -353,6 +408,78 @@ def execute_tool(name: str, arguments: str) -> str:
             result = write_file(
                 target,
                 parsed_arguments["content"],
+            )
+
+        elif name == "save_memory":
+            if set(parsed_arguments) - {
+                "category", "title", "content", "tags", "source"
+            }:
+                raise ValueError("Invalid save_memory arguments.")
+
+            missing = {"category", "title", "content"} - set(
+                parsed_arguments
+            )
+
+            if missing:
+                raise ValueError(
+                    "Missing save_memory arguments: "
+                    f"{', '.join(sorted(missing))}."
+                )
+
+            target = parsed_arguments["title"]
+            result = save_memory(
+                parsed_arguments["category"],
+                parsed_arguments["title"],
+                parsed_arguments["content"],
+                parsed_arguments.get("tags", ""),
+                parsed_arguments.get("source"),
+            )
+
+        elif name == "search_memories":
+            if set(parsed_arguments) - {"query", "category", "limit"}:
+                raise ValueError("Invalid search_memories arguments.")
+
+            if "query" not in parsed_arguments:
+                raise ValueError(
+                    "Missing search_memories argument: query."
+                )
+
+            target = parsed_arguments["query"]
+            result = search_memories(
+                parsed_arguments["query"],
+                parsed_arguments.get("category"),
+                parsed_arguments.get("limit", 20),
+            )
+
+        elif name == "update_memory":
+            if set(parsed_arguments) - {
+                "memory_id", "title", "content", "category", "tags", "status"
+            }:
+                raise ValueError("Invalid update_memory arguments.")
+
+            if "memory_id" not in parsed_arguments:
+                raise ValueError(
+                    "Missing update_memory argument: memory_id."
+                )
+
+            if set(parsed_arguments) == {"memory_id"}:
+                raise ValueError(
+                    "At least one field to update is required."
+                )
+
+            memory_id = parsed_arguments["memory_id"]
+
+            if isinstance(memory_id, bool) or not isinstance(memory_id, int):
+                raise ValueError("memory_id must be an integer.")
+
+            target = memory_id
+            result = update_memory(
+                memory_id,
+                parsed_arguments.get("title"),
+                parsed_arguments.get("content"),
+                parsed_arguments.get("category"),
+                parsed_arguments.get("tags"),
+                parsed_arguments.get("status"),
             )
 
         else:
