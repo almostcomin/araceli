@@ -20,9 +20,12 @@ from config import (
 
 from memory import (
     DEFAULT_DB_PATH,
+    count_memories,
+    delete_memory,
     get_recent_memories,
     init_database,
 )
+from memory.memory_store import MAX_SNAPSHOT_LIMIT
 
 from tools import execute_tool
 
@@ -588,6 +591,50 @@ def generate_response(
     raise RuntimeError("Maximum tool call rounds exceeded.")
 
 
+def print_memory_listing() -> None:
+    """Print active memories for the /memory console command."""
+
+    records = get_recent_memories(MAX_SNAPSHOT_LIMIT)
+    active_count = count_memories(status="active")
+    superseded_count = count_memories(status="superseded")
+
+    print(
+        f"\n[Memory] {active_count} active, "
+        f"{superseded_count} superseded"
+    )
+
+    if not records:
+        print("No active memories.")
+        return
+
+    for record in records:
+        print(
+            f"  #{record.id} | {record.category} | {record.title} "
+            f"| updated {record.updated_at}"
+        )
+
+    if active_count > len(records):
+        print(
+            f"  (showing the {len(records)} most recent of "
+            f"{active_count} active memories)"
+        )
+
+
+def forget_memory(memory_id: int) -> None:
+    """Delete a memory by id for the /forget console command."""
+
+    try:
+        deleted = delete_memory(memory_id)
+    except ValueError as error:
+        print(f"\n[Memory] Could not delete: {error}")
+        return
+
+    print(
+        f"\n[Memory] Deleted #{deleted.id} | {deleted.category} | "
+        f"{deleted.title}"
+    )
+
+
 def main() -> None:
     """Application entry point."""
 
@@ -643,7 +690,10 @@ def main() -> None:
         print("Memory: disabled (initialization failed)")
 
     print("\nAraceli is ready.")
-    print("Commands: /reset (new conversation), /exit (quit)")
+    print(
+        "Commands: /reset (new conversation), /memory (list memories), "
+        "/forget <id> (delete memory), /exit (quit)"
+    )
     print("-" * 55)
 
     while True:
@@ -681,6 +731,40 @@ def main() -> None:
 
                 messages = create_conversation(system_prompt)
                 print("\n[Conversation reset]")
+                continue
+
+            if command == "/memory":
+                if not memory_enabled:
+                    print("\n[Memory] Memory is disabled.")
+                    continue
+
+                try:
+                    print_memory_listing()
+                except Exception as error:
+                    print(
+                        f"\n[Memory] Could not list memories: {error}"
+                    )
+
+                continue
+
+            if command.startswith("/forget"):
+                if not memory_enabled:
+                    print("\n[Memory] Memory is disabled.")
+                    continue
+
+                argument = user_input[len("/forget"):].strip()
+
+                if not argument.isdigit():
+                    print(
+                        "\nUsage: /forget <id>  (see /memory for ids)"
+                    )
+                    continue
+
+                try:
+                    forget_memory(int(argument))
+                except Exception as error:
+                    print(f"\n[Memory] Could not delete: {error}")
+
                 continue
 
             previous_messages = copy.deepcopy(messages)

@@ -377,3 +377,55 @@ def get_recent_memories(
         connection.close()
 
     return [MemoryRecord.from_row(row) for row in rows]
+
+
+def delete_memory(memory_id: int, db_path: DbPath = None) -> MemoryRecord:
+    """Physically delete a memory by its id and return the deleted record."""
+
+    if isinstance(memory_id, bool) or not isinstance(memory_id, int):
+        raise ValueError("memory_id must be an integer.")
+
+    if memory_id < 1:
+        raise ValueError("memory_id must be a positive integer.")
+
+    connection = get_connection(db_path)
+
+    try:
+        with connection:
+            existing = _fetch_by_id(connection, memory_id)
+
+            if existing is None:
+                raise ValueError(f"Memory not found: id {memory_id}.")
+
+            connection.execute(
+                "DELETE FROM memories WHERE id = ?",
+                (memory_id,),
+            )
+    finally:
+        connection.close()
+
+    return existing
+
+
+def count_memories(status: str | None = None, db_path: DbPath = None) -> int:
+    """Count memories, optionally filtered by status."""
+
+    if status is not None:
+        status = _validate_status(status)
+
+    connection = get_connection(db_path)
+
+    try:
+        if status is None:
+            row = connection.execute(
+                "SELECT COUNT(*) AS total FROM memories"
+            ).fetchone()
+        else:
+            row = connection.execute(
+                "SELECT COUNT(*) AS total FROM memories WHERE status = ?",
+                (status,),
+            ).fetchone()
+
+        return int(row["total"])
+    finally:
+        connection.close()

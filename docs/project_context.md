@@ -50,8 +50,11 @@ application-side validation.
     supplement, but do not replace, behavioral instructions.
 5.  `main.py` creates the LM Studio client and initializes an in-memory
     conversation with the combined system prompt.
-6.  The console accepts user messages and supports `/reset` and exit
-    commands.
+6.  The console accepts user messages and supports these commands:
+    `/reset` (new conversation), `/memory` (list active memories),
+    `/forget <id>` (physically delete a memory), and `/exit` (quit).
+    Memory management commands are handled entirely by Python and are
+    never exposed to the model.
 7.  For each user message, `main.py` sends the conversation to the
     configured model.
 8.  The model may request a tool. `main.py` dispatches it through
@@ -125,7 +128,16 @@ Python-side restrictions enforced by `memory/memory_store.py`:
 -   No duplicate active memories sharing category and title (enforced
     on both save and update).
 -   No physical deletion through model tools; obsolete memories are
-    marked `superseded`.
+    marked `superseded`. Physical deletion is available only to the
+    user through the `/forget <id>` console command, backed by
+    `memory_store.delete_memory`, which Python-side code can also call
+    directly.
+
+`/memory` lists up to the 50 most recently updated active memories
+with their ids, categories, titles and update timestamps, plus the
+total active and superseded counts. `/forget <id>` requires an
+explicit numeric id and prints the deleted record as confirmation;
+invalid or unknown ids delete nothing.
 
 Memory results are returned through the same execution envelope as
 other tools, so the model can cite memory ids and update timestamps as
@@ -176,6 +188,8 @@ when the API returns usage data. - Warning for responses terminated with
 `docs/project_context.md` once at application startup. - Persistent
 memory using SQLite (`data/araceli.db`) with save, search, and update
 tools, a startup memory snapshot, and snapshot refresh on `/reset`. -
+User-side memory management console commands: `/memory` (list) and
+`/forget <id>` (physical delete, never exposed to the model). -
 Automated unit tests for the memory store and the memory tool dispatch
 (`tests/test_memory.py`, run with `python -m unittest discover -s tests
 -t .`). - Version control with git and a private GitHub repository;

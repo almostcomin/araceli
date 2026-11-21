@@ -3,6 +3,8 @@
 from .database import DEFAULT_DB_PATH, init_database
 from .memory_store import (
     CATEGORIES,
+    count_memories,
+    delete_memory,
     get_recent_memories,
     save_memory,
     search_memories,
@@ -14,6 +16,8 @@ __all__ = [
     "CATEGORIES",
     "DEFAULT_DB_PATH",
     "MemoryRecord",
+    "count_memories",
+    "delete_memory",
     "get_recent_memories",
     "init_database",
     "save_memory",

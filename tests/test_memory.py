@@ -19,6 +19,8 @@ import main
 
 from memory import (
     MemoryRecord,
+    count_memories,
+    delete_memory,
     get_recent_memories,
     init_database,
     save_memory,
@@ -455,6 +457,104 @@ class MemoryToolDispatchTestCase(unittest.TestCase):
         self.assertIn("not found", envelope["error"]["message"])
 
 
+class MemoryDeletionTestCase(unittest.TestCase):
+    """Tests for physical deletion and counting."""
+
+    def setUp(self):
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self._temp_dir.name) / "araceli.db"
+        init_database(self.db_path)
+
+    def tearDown(self):
+        self._temp_dir.cleanup()
+
+    def _save_sample(self, title="Sample title"):
+        return save_memory(
+            "fact", title, "Sample content", db_path=self.db_path
+        )
+
+    def test_delete_returns_deleted_record(self):
+        record = self._save_sample()
+
+        deleted = delete_memory(record.id, db_path=self.db_path)
+
+        self.assertEqual(deleted.id, record.id)
+        self.assertEqual(deleted.title, record.title)
+        self.assertEqual(deleted.status, "active")
+
+    def test_delete_removes_row(self):
+        record = self._save_sample()
+        delete_memory(record.id, db_path=self.db_path)
+
+        self.assertEqual(
+            search_memories("sample", status="all", db_path=self.db_path),
+            [],
+        )
+        self.assertEqual(
+            get_recent_memories(db_path=self.db_path), []
+        )
+        self.assertEqual(count_memories(db_path=self.db_path), 0)
+
+    def test_delete_superseded_memory(self):
+        record = self._save_sample()
+        update_memory(record.id, status="superseded", db_path=self.db_path)
+
+        deleted = delete_memory(record.id, db_path=self.db_path)
+
+        self.assertEqual(deleted.status, "superseded")
+        self.assertEqual(count_memories(db_path=self.db_path), 0)
+
+    def test_delete_unknown_id_raises(self):
+        with self.assertRaises(ValueError):
+            delete_memory(999, db_path=self.db_path)
+
+    def test_delete_rejects_invalid_ids(self):
+        with self.assertRaises(ValueError):
+            delete_memory(0, db_path=self.db_path)
+
+        with self.assertRaises(ValueError):
+            delete_memory(-1, db_path=self.db_path)
+
+        with self.assertRaises(ValueError):
+            delete_memory("1", db_path=self.db_path)
+
+        with self.assertRaises(ValueError):
+            delete_memory(True, db_path=self.db_path)
+
+    def test_delete_only_removes_target_row(self):
+        first = self._save_sample("First memory")
+        second = self._save_sample("Second memory")
+
+        delete_memory(first.id, db_path=self.db_path)
+
+        self.assertEqual(count_memories(db_path=self.db_path), 1)
+
+        remaining = get_recent_memories(db_path=self.db_path)
+
+        self.assertEqual(remaining[0].id, second.id)
+
+    def test_count_memories_by_status(self):
+        first = self._save_sample("First memory")
+        second = self._save_sample("Second memory")
+        third = self._save_sample("Third memory")
+
+        update_memory(first.id, status="superseded", db_path=self.db_path)
+        update_memory(second.id, status="superseded", db_path=self.db_path)
+
+        self.assertEqual(count_memories(db_path=self.db_path), 3)
+        self.assertEqual(
+            count_memories(status="active", db_path=self.db_path), 1
+        )
+        self.assertEqual(
+            count_memories(status="superseded", db_path=self.db_path), 2
+        )
+        self.assertEqual(third.status, "active")
+
+    def test_count_memories_rejects_invalid_status(self):
+        with self.assertRaises(ValueError):
+            count_memories(status="deleted", db_path=self.db_path)
+
+
 class ToolConsoleVisibilityTestCase(unittest.TestCase):
     """Tests for the console tool execution reporting."""
 
@@ -529,6 +629,92 @@ class ToolConsoleVisibilityTestCase(unittest.TestCase):
         text = self._capture("calculate", "not json")
 
         self.assertIn("[tool] calculate -> unknown", text)
+
+
+class ConsoleMemoryCommandsTestCase(unittest.TestCase):
+    """Tests for the /memory and /forget console handlers."""
+
+    def setUp(self):
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self._temp_dir.name) / "araceli.db"
+        init_database(self.db_path)
+
+        patcher = mock.patch.object(
+            database,
+            "DEFAULT_DB_PATH",
+            self.db_path,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        self._temp_dir.cleanup()
+
+    def _capture_listing(self):
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            main.print_memory_listing()
+
+        return output.getvalue()
+
+    def test_listing_with_memories(self):
+        save_memory(
+            "preference",
+            "Color favorito",
+            "The user's favorite color is red.",
+        )
+
+        text = self._capture_listing()
+
+        self.assertIn("1 active, 0 superseded", text)
+        self.assertIn("#1 | preference | Color favorito", text)
+
+    def test_listing_empty_database(self):
+        text = self._capture_listing()
+
+        self.assertIn("0 active, 0 superseded", text)
+        self.assertIn("No active memories.", text)
+
+    def test_listing_counts_superseded(self):
+        record = save_memory(
+            "fact", "Sample", "Sample content"
+        )
+        update_memory(record.id, status="superseded")
+
+        text = self._capture_listing()
+
+        self.assertIn("0 active, 1 superseded", text)
+        self.assertIn("No active memories.", text)
+
+    def test_forget_deletes_and_reports(self):
+        record = save_memory(
+            "preference",
+            "Color favorito",
+            "The user's favorite color is red.",
+        )
+
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            main.forget_memory(record.id)
+
+        text = output.getvalue()
+
+        self.assertIn(f"Deleted #{record.id} | preference", text)
+        self.assertIn("Color favorito", text)
+        self.assertEqual(count_memories(), 0)
+
+    def test_forget_unknown_id_reports_error(self):
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            main.forget_memory(999)
+
+        text = output.getvalue()
+
+        self.assertIn("Could not delete", text)
+        self.assertIn("not found", text)
 
 
 if __name__ == "__main__":
