@@ -10,7 +10,6 @@ from .models import MemoryRecord
 CATEGORIES = (
     "preference",
     "personal",
-    "project",
     "decision",
     "task",
     "fact",
@@ -51,6 +50,7 @@ def _validate_text(
     field_name: str,
     max_length: int,
     allow_empty: bool = False,
+    hint: str | None = None,
 ) -> str:
     """Validate and normalize a text field."""
 
@@ -63,10 +63,15 @@ def _validate_text(
         raise ValueError(f"{field_name} must not be empty.")
 
     if len(text) > max_length:
-        raise ValueError(
+        message = (
             f"{field_name} exceeds the maximum length of "
             f"{max_length} characters."
         )
+
+        if hint:
+            message += f" {hint}"
+
+        raise ValueError(message)
 
     return text
 
@@ -166,7 +171,15 @@ def save_memory(
 
     category = _validate_category(category)
     title = _validate_text(title, "title", MAX_TITLE_LENGTH)
-    content = _validate_text(content, "content", MAX_CONTENT_LENGTH)
+    content = _validate_text(
+        content,
+        "content",
+        MAX_CONTENT_LENGTH,
+        hint=(
+            "Memory is for compact facts: store large reports as "
+            "project files with write_file instead."
+        ),
+    )
     tags = _validate_text(tags or "", "tags", MAX_TAGS_LENGTH, True)
 
     if source is not None:
@@ -293,7 +306,13 @@ def update_memory(
 
     if content is not None:
         updates["content"] = _validate_text(
-            content, "content", MAX_CONTENT_LENGTH
+            content,
+            "content",
+            MAX_CONTENT_LENGTH,
+            hint=(
+                "Memory is for compact facts: store large reports as "
+                "project files with write_file instead."
+            ),
         )
 
     if category is not None:

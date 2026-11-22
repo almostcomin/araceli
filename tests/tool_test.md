@@ -55,7 +55,7 @@ Stores a new persistent memory in the SQLite memory database
 application restarts.
 
 **Parameters:**
-- `category` (required) — One of: `preference`, `personal`, `project`, `decision`, `task`, `fact`, `knowledge`
+- `category` (required) — One of: `preference`, `personal`, `decision`, `task`, `fact`, `knowledge`
 - `title` (required) — Short identifying label (max 200 characters)
 - `content` (required) — The memory itself (max 4000 characters)
 - `tags` (optional) — Comma-separated keywords (max 200 characters)

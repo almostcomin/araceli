@@ -160,7 +160,7 @@ The model can request these tools:
     creates a timestamped backup under `.backups/`.
 -   `save_memory(category, title, content, tags, source)`: stores a new
     persistent memory in SQLite. Categories are validated against a
-    Python allowlist (`preference`, `personal`, `project`, `decision`,
+    Python allowlist (`preference`, `personal`, `decision`,
     `task`, `fact`, `knowledge`). Duplicate active memories with the
     same category and title are rejected.
 -   `search_memories(query, category, limit)`: keyword search across
@@ -242,7 +242,7 @@ first use). The schema is a single `memories` table with indexes on
 
 Python-side restrictions enforced by `memory/memory_store.py`:
 
--   Category allowlist: `preference`, `personal`, `project`, `decision`,
+-   Category allowlist: `preference`, `personal`, `decision`,
     `task`, `fact`, `knowledge`.
 -   Status allowlist: `active`, `superseded`.
 -   Maximum lengths: title 200, content 4000, tags 200, source 500,
