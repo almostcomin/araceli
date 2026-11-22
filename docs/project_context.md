@@ -289,9 +289,13 @@ them.
     into the system prompt as a snapshot with provenance metadata
     (read timestamp, SHA-256, status). A missing, empty, or oversized
     context file is reported as such, and the model is instructed to
-    create it as the first step of the work. Araceli also generates
+    create it as the first     step of the work. Araceli also generates
     result files (reports, comparisons) and temporary working files
-    inside the project when the user asks for them.
+    inside the project when the user asks for them. When a
+    verification reveals that the context file does not match observed
+    reality (files that do not exist, results that are absent), the
+    model must reconcile it immediately: remove or mark unverified
+    what is false and reflect what was actually verified.
 -   **Project summaries:** `/project info` (no argument) shows a
     read-only summary of the active project; `/project info <name>`
     shows it for any registered project without activating it. The
