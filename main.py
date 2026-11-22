@@ -58,6 +58,7 @@ from memory import (
 from memory.memory_store import MAX_SNAPSHOT_LIMIT
 
 import projects
+import settings as app_settings
 
 from console import (
     ARACELI_INPUT,
@@ -493,10 +494,15 @@ def build_system_prompt(
     project_context_source: dict[str, Any],
     memory_section: str | None = None,
     active_project_section: str | None = None,
+    conversation_language: str = "es",
 ) -> str:
     """Combine behavioral instructions, startup context and source manifest."""
 
-    combined_prompt = system_prompt.rstrip()
+    combined_prompt = (
+        f"Idioma de conversaci\u00f3n configurado para esta sesi\u00f3n: "
+        f"{conversation_language}. Responde siempre en ese idioma.\n\n"
+        + system_prompt.rstrip()
+    )
 
     if project_context:
         combined_prompt += (
@@ -1524,6 +1530,7 @@ def print_commands() -> None:
             *SYSTEM_MESSAGE,
         )
     )
+    print(paint("\t/language [code] (conversation language)", *SYSTEM_MESSAGE))
     print(
         paint(
             "\t/project [status|list|info|add|remove|load|unload] "
@@ -1612,6 +1619,7 @@ def main() -> None:
             project_context_source,
             prompt_memory_section,
             project_section,
+            conversation_language,
         )
 
         known_chars = (
@@ -1635,6 +1643,8 @@ def main() -> None:
             breakdown["active_project"] = estimate_tokens(project_section)
 
         return prompt, breakdown
+
+    conversation_language = app_settings.load_conversation_language()
 
     system_prompt, breakdown = compose_prompt(active_project)
 
@@ -1811,6 +1821,48 @@ def main() -> None:
 
             if command == "/help":
                 print_commands()
+                continue
+
+            if command == "/language" or command.startswith("/language "):
+                argument = user_input[len("/language"):].strip().lower()
+
+                if not argument:
+                    print(
+                        paint(
+                            f"Conversation language: {conversation_language}",
+                            *SYSTEM_MESSAGE,
+                        )
+                    )
+                    continue
+
+                if not app_settings.validate_language_code(argument):
+                    print(
+                        paint(
+                            f"Invalid language code: '{argument}'. Use a "
+                            "2-letter ISO code (e.g. es, en, fr).",
+                            *SYSTEM_ERROR,
+                        )
+                    )
+                    continue
+
+                app_settings.save_conversation_language(argument)
+                conversation_language = argument
+                system_prompt, breakdown = compose_prompt(active_project)
+                messages = create_conversation(system_prompt)
+                last_context_usage = None
+                print(
+                    paint(
+                        f"\nConversation language set to: {argument}",
+                        *SYSTEM_MESSAGE,
+                    )
+                )
+                print(
+                    paint(
+                        "[New conversation started]",
+                        *SYSTEM_MESSAGE,
+                    )
+                )
+
                 continue
 
             if command == "/context" or command.startswith("/context "):
