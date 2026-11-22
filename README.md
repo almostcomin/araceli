@@ -17,9 +17,11 @@ chatbot with predefined commands. Its core capabilities:
 
 - **Conversation** with a local model through a console interface,
   in Spanish, with tool calling.
-- **Persistent memory** backed by SQLite: preferences, project
-  information, decisions, tasks, and facts survive conversation
-  resets and application restarts.
+- **Persistent memory** backed by SQLite: user-level and general
+  knowledge (preferences, personal context, decisions, tasks, facts)
+  that survives conversation resets and application restarts. Memory
+  is independent of projects: project work data lives in each
+  project's own context file, never in global memory.
 - **File access** under strict Python-enforced permissions: allowed
   extensions, size limits, excluded directories, and automatic
   backups before every overwrite. When a user activates one of their
@@ -57,8 +59,8 @@ chatbot with predefined commands. Its core capabilities:
   and should be portable with minor path adjustments).
 - **[LM Studio](https://lmstudio.ai)** serving an OpenAI-compatible
   API at `http://127.0.0.1:1234/v1` with a tool-calling model loaded
-  (the project currently uses `qwen/qwen3.5-9b` with a 24,576-token
-  context).
+  (the project currently uses `qwen/qwen3.5-9b`; the application
+  verifies the model's effective context length at startup).
 - Python dependencies (installed from `requirements.txt`):
   - `openai` — API client for LM Studio
   - `pypdf` — PDF text extraction
@@ -72,7 +74,7 @@ No other services, accounts, or API keys are needed.
 1. Clone the repository and create a virtual environment:
 
    ```bat
-   cd /d D:\Araceli
+   cd /d <path-to-your-Araceli-folder>
    python -m venv .venv
    .venv\Scripts\activate.bat
    ```
@@ -158,6 +160,14 @@ resume in future sessions, and generates result or temporary files
 inside the project when you ask for them. The model has no tool to
 change the active project; only you can.
 
+The context file is Araceli's sole responsibility: she creates it,
+updates it, reconciles it after verifications, and prunes it without
+asking permission (editing it is never a destructive operation).
+Classification is hers too: user-level facts (how the user wants to
+be called, preferences) go to global memory; project work data
+(analysis, medias, comparisons, extracted data) stays only in the
+project context file and project files.
+
 Every tool execution is shown in the console as a compact
 `[tool] name -> status` line, so you can see what the assistant
 actually does and whether each operation succeeded. Console output is
@@ -173,14 +183,14 @@ banner shows an approximate token breakdown of everything loaded
 
 | Tool | Purpose |
 |---|---|
-| `calculate` | Restricted arithmetic evaluation (AST-based, no arbitrary code) |
+| `calculate` | Arithmetic with whitelisted math functions (`round`, `abs`, `min`, `max`, `sqrt`) — AST-based, no arbitrary code |
 | `list_files` | List ALL files and directories of the active project (text-only in the repository) |
 | `read_file` | Read any file as UTF-8 text in the active project (text allowlist in the repository) |
 | `write_file` | Write any extension anywhere in the active project; repository restricted |
-| `save_memory` | Store a persistent memory (validated categories and limits) |
+| `save_memory` | Store a persistent memory (user-level facts; validated categories and limits) |
 | `search_memories` | Keyword search across persistent memories |
 | `update_memory` | Update or supersede a memory by id |
-| `read_pdf` | Extract text from a PDF in the configured documents directories |
+| `read_pdf` | Extract text from a PDF in the configured documents directories, with optional page selection |
 | `list_documents` | List available PDF documents with name, size and date |
 | `web_search` | Generic web search via DuckDuckGo |
 | `web_fetch` | Read a public web page as text (SSRF-protected) |
@@ -210,13 +220,38 @@ Araceli/
 
 ## Testing
 
-The project includes an automated test suite (128 tests) covering the
-memory store, memory and file tool dispatch, the calculator, file
-access restrictions, PDF extraction, and web tool protections:
+The project includes an automated test suite (235 tests) covering the
+memory store, memory and file tool dispatch, the calculator with its
+function whitelist, file access restrictions, PDF extraction with
+page selection, web tool protections, console color helpers, and the
+project registry and commands:
 
 ```bat
 python -m unittest discover -s tests -t .
 ```
+
+## Roadmap
+
+Planned work, in priority order (details in
+`docs/project_context.md`):
+
+- **Self-development capability (Phase 5):** a user-gated
+  development mode (`/dev on` / `/dev off`) exposing a guarded
+  source-writing tool, with automatic backups, syntax validation,
+  and the full test suite run after every write. Git history
+  remains the final safety net.
+- **Real-task usage:** run Araceli on real workloads and record
+  friction points.
+- **Memory retrieval:** evaluate FTS5 or embedding-based search
+  only after real usage shows it is needed.
+- **Conversation auto-summarization:** automatic compaction when
+  the context fills up (`/context compact` exists as the manual
+  tool today).
+- **OCR for scanned PDFs** without a text layer.
+- **Alternative web search backends** if DuckDuckGo quality
+  degrades.
+- **Comprehensive conversation-loop tests** (the tool budget has
+  coverage; the full loop does not).
 
 ## Privacy notes
 
