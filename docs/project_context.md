@@ -81,9 +81,11 @@ application-side validation.
     describing each execution (`[tool] name -> status`), and continues
     the model interaction, subject to `MAX_TOOL_ROUNDS` (currently 8).
     If the model emits a tool call as text markup instead of using the
-    tool_calls mechanism, Python parses it, executes it if valid, and
-    returns the result to the conversation; answers consisting only of
-    markup raise an error instead of reaching the user.
+    tool_calls mechanism, Python parses both markup styles the model
+    uses (JSON objects and XML-ish function/parameter tags), executes
+    it if valid, and returns the result to the conversation; answers
+    consisting only of unparseable markup raise an error instead of
+    reaching the user.
 9.  The application displays the final answer and, when available,
     context-token usage. A `finish_reason` of `length` triggers a
     warning that the response may be incomplete.

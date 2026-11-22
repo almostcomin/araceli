@@ -862,9 +862,79 @@ def _clean_answer(answer: str) -> str:
 
 
 _EMBEDDED_CALL_PATTERN = re.compile(
-    r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+    r"<tool_call>\s*(\{.*\})\s*</tool_call>",
     re.DOTALL,
 )
+
+_EMBEDDED_FUNCTION_PATTERN = re.compile(
+    r"<tool_call>\s*<function=([^>]+)>(.*?)</function>\s*</tool_call>",
+    re.DOTALL,
+)
+
+_EMBEDDED_PARAMETER_PATTERN = re.compile(
+    r"<parameter=([^>]+)>(.*?)</parameter>",
+    re.DOTALL,
+)
+
+
+def _coerce_parameter(value: str) -> Any:
+    """Coerce a parameter string to int/float/bool when it looks like one."""
+
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return value
+
+
+def _parse_embedded_call(
+    answer: str,
+) -> tuple[str, dict[str, Any]] | None:
+    """Extract (name, arguments) from an embedded tool-call markup.
+
+    Supports the JSON style and the XML-ish style that qwen models
+    sometimes emit as plain text.
+    """
+
+    call_match = _EMBEDDED_CALL_PATTERN.search(answer)
+
+    if call_match is not None:
+        try:
+            payload = json.loads(call_match.group(1))
+        except json.JSONDecodeError:
+            return None
+
+        if not isinstance(payload, dict):
+            return None
+
+        name = payload.get("name")
+        arguments = payload.get("arguments", {})
+
+        if not isinstance(name, str) or not isinstance(arguments, dict):
+            return None
+
+        return name, arguments
+
+    function_match = _EMBEDDED_FUNCTION_PATTERN.search(answer)
+
+    if function_match is None:
+        return None
+
+    name = function_match.group(1).strip()
+
+    if not name:
+        return None
+
+    arguments: dict[str, Any] = {}
+
+    for parameter_match in _EMBEDDED_PARAMETER_PATTERN.finditer(
+        function_match.group(2)
+    ):
+        key = parameter_match.group(1).strip()
+        arguments[key] = _coerce_parameter(
+            parameter_match.group(2).strip()
+        )
+
+    return name, arguments
 
 
 def _try_execute_embedded_call(
@@ -873,22 +943,12 @@ def _try_execute_embedded_call(
 ) -> tuple[str, str] | None:
     """Execute a tool call the model embedded as text markup."""
 
-    match = _EMBEDDED_CALL_PATTERN.search(answer)
+    parsed = _parse_embedded_call(answer)
 
-    if match is None:
+    if parsed is None:
         return None
 
-    try:
-        payload = json.loads(match.group(1))
-        name = payload.get("name")
-        arguments = payload.get("arguments", {})
-
-        if not isinstance(name, str) or not isinstance(arguments, dict):
-            return None
-
-        arguments_text = json.dumps(arguments)
-    except (json.JSONDecodeError, TypeError):
-        return None
+    name, arguments = parsed
 
     known_tools = {
         definition["function"]["name"]
@@ -898,7 +958,9 @@ def _try_execute_embedded_call(
     if name not in known_tools:
         return None
 
-    result_text = execute_tool(name, arguments_text)
+    result_text = execute_tool(
+        name, json.dumps(arguments, ensure_ascii=False)
+    )
 
     return result_text, name
 
