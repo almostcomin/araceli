@@ -151,15 +151,24 @@ def _workspace_root() -> Path:
 
 
 def calculate(expression: str) -> int | float:
-    """Evaluate a restricted arithmetic expression."""
+    """Evaluate a restricted arithmetic expression.
 
-    if not isinstance(expression, str) or not expression.strip():
+    Newlines and extra whitespace are normalized first, so multi-line
+    expressions (for example one amount per line) parse correctly.
+    """
+
+    if not isinstance(expression, str):
         raise ValueError("Expression must be a non-empty string.")
 
-    if len(expression) > MAX_EXPRESSION_LENGTH:
+    normalized = " ".join(expression.split())
+
+    if not normalized:
+        raise ValueError("Expression must be a non-empty string.")
+
+    if len(normalized) > MAX_EXPRESSION_LENGTH:
         raise ValueError("Expression is too long.")
 
-    syntax_tree = ast.parse(expression, mode="eval")
+    syntax_tree = ast.parse(normalized, mode="eval")
 
     def evaluate_node(node: ast.AST) -> int | float:
         if isinstance(node, ast.Constant):

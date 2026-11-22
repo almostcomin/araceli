@@ -77,6 +77,20 @@ class CalculateTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate("99**100")
 
+    def test_accepts_multiline_expressions(self):
+        self.assertAlmostEqual(
+            calculate("61.12\n+ 43.28\n+ 19.62"), 124.02, places=2
+        )
+        self.assertEqual(calculate("2 *\n(3 + 4)"), 14)
+
+    def test_length_limit_applies_after_normalization(self):
+        with self.assertRaises(ValueError):
+            calculate("1+" * 150)
+
+        normalized_fits = "\n".join(["1"] + ["+ 1"] * 39)
+
+        self.assertEqual(calculate(normalized_fits), 40)
+
     def test_division_by_zero_raises(self):
         with self.assertRaises(ZeroDivisionError):
             calculate("1/0")
