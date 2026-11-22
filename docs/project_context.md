@@ -20,20 +20,29 @@ English.
     message.
 -   `tools.py`: tool implementations, validation, execution, dispatch,
     and the active-workspace mechanism for file tools.
+-   `console.py`: console color helpers (ANSI, terminal detection,
+    `NO_COLOR` support) with semantic roles.
 -   `projects.py`: registry of user project workspaces
-    (`data/projects.json`) and reading of the per-project context file
-    (`ARACELI_CONTEXT.md`).
+    (`data/projects.json`) and reading of the per-project context
+    file (`.ARACELI_CONTEXT.md`).
+-   `run.bat` / `run.sh`: launcher scripts (CMD / POSIX shells) that
+    activate the virtual environment and start the application.
 -   `memory/`: persistent memory package.
     -   `memory/database.py`: SQLite connection management and schema
         initialization. The database file is `data/araceli.db`.
     -   `memory/models.py`: the `MemoryRecord` dataclass.
-    -   `memory/memory_store.py`: save, search, update, and recent-
-        memory operations with Python-side validation.
--   `docs/`: project documentation.
--   `tests/`: automated tests (`test_memory.py` for the memory system,
-    `test_tools.py` for the calculator, file tools, and tool dispatch,
-    `test_pdf_web.py` for PDF and web tools) and tool documentation
-    (`tool_test.md`).
+    -   `memory/memory_store.py`: save, search, update, delete, and
+        count operations with Python-side validation.
+-   `docs/`: project documentation. `araceli_brief.md` is the compact
+    runtime context injected at startup; `project_context.md` (this
+    document) is development documentation and is not injected.
+-   `tests/`: automated tests — `test_memory.py` (memory store,
+    memory tool dispatch, console handlers), `test_tools.py`
+    (calculator, file tools, tool dispatch), `test_pdf_web.py` (PDF
+    and web tools), `test_server_context.py` (server context
+    discovery, API error hints, token estimation, tool budget),
+    `test_console.py` (color helpers), `test_projects.py` (project
+    registry and commands) — plus tool documentation (`tool_test.md`).
 -   `data/`: application data directory; contains the SQLite memory
     database (`data/araceli.db`), the projects registry
     (`data/projects.json`), the internal documents directory
@@ -65,7 +74,8 @@ application-side validation.
     conversation with the combined system prompt.
 6.  The console accepts user messages and supports these commands:
     `/reset` (new conversation), `/memory` (list active memories),
-    `/forget <id>` (physically delete a memory), `/project`
+    `/forget <id>` (physically delete a memory), `/context` (context
+    usage), `/project`
     (manage project workspaces: `status`, `list`, `info [name]`,
     `add <path>`, `remove <name>`, `load <name>`, `unload`), and `/exit`
     (quit). Memory management and project management commands are
@@ -92,7 +102,8 @@ application-side validation.
     consisting only of unparseable markup raise an error instead of
     reaching the user.
 9.  The application displays the final answer and, when available,
-    context-token usage. A `finish_reason` of `length` triggers a
+    context-token usage (with the average generation speed in tokens
+    per second). A `finish_reason` of `length` triggers a
     warning that the response may be incomplete.
 10. If an interaction raises an exception, the previous conversation
     history is restored.
@@ -104,6 +115,13 @@ and behavioral instructions are not) and prints the resulting context
 usage. Loading or unloading a project (`/project load <name>`,
 `/project unload`) also recomposes the prompt, starts a new
 conversation, and prints the context usage.
+
+Token counts are estimated (`estimate_tokens`, a chars/4 heuristic)
+and shown as a per-component breakdown in the startup banner
+(instructions, project brief, memory/manifest, tools); the same
+estimate is printed by `/reset`, project load/unload, and `/context`
+before the first model response. After each response the usage is
+the exact value reported by the API.
 
 If `docs/araceli_brief.md` is missing, empty, or cannot be read, the
 application displays a warning and continues without project-specific
@@ -338,12 +356,14 @@ behavior is not established.
 -   `TEMPERATURE`: generation temperature.
 -   `MAX_TOKENS`: maximum generated tokens per request.
 -   `CONTEXT_LENGTH`: configured context length used for usage
-    reporting.
+    reporting (verified against the server at startup).
+-   `MAX_TOOL_ROUNDS`: tool-call round budget per turn (default 16).
 -   `SYSTEM_PROMPT_FILE`: system prompt filename.
 
-LM Studio must be running with the configured model loaded. The
-application does not currently retrieve the loaded model's effective
-context length automatically.
+LM Studio must be running with the configured model loaded. At
+startup, the application verifies the model's effective context
+length through LM Studio's native API and warns when it is smaller
+than the configured one; usage reporting uses the verified value.
 
 The direct dependencies are `openai`, `pypdf` (PDF text extraction),
 `ddgs` (DuckDuckGo search), `truststore` (Windows certificate
@@ -360,72 +380,57 @@ Bash.
 
 ## Current Status
 
-Implemented: - Local LM Studio integration through the OpenAI Python
-client. - Console conversation loop and in-memory history. - Bounded
-tool-calling loop. - Restricted arithmetic and project-file tools. -
-File validation and pre-overwrite backups. - Context-usage reporting
-when the API returns usage data. - Warning for responses terminated with
-`finish_reason="length"`. - Automatic loading of
-`docs/araceli_brief.md` once at application startup (the compact
-runtime brief; this document is development documentation and is not
-injected). - Persistent
-memory using SQLite (`data/araceli.db`) with save, search, and update
-tools, a startup memory snapshot, and snapshot refresh on `/reset`. -
-User-side memory management console commands: `/memory` (list) and
-`/forget <id>` (physical delete, never exposed to the model). -
-Automated unit tests for the memory store and the memory tool dispatch
-(`tests/test_memory.py`, run with `python -m unittest discover -s tests
--t .`). - Version control with git and a private GitHub repository;
-`data/`, `.venv/`, `.backups/`, and `__pycache__/` are not tracked. -
-`requirements.txt`
-pinning the direct dependency (`openai`). -
-Automated unit tests for the calculator, file tools, and tool dispatch
-in addition to the memory tests (91 tests total). - PDF document
-analysis through `read_pdf` over the private `data/documents/`
-directory. - Controlled web research through `web_search` and
-`web_fetch` with SSRF protections, content-type limits, and
-OS-trust-store TLS. - Tool-call reliability hardening: 8 tool rounds,
-execution of tool calls embedded as text markup by the model, and
-removal of markup from final answers. - Console output resilient to
-characters outside the console encoding. - Color-coded console
-output through `console.py` (ANSI with Windows virtual-terminal
-activation, tty detection, and `NO_COLOR` support) using semantic
-roles: `USER_INPUT`/`USER_TEXT` (cyan, user), `ARACELI_INPUT`/
-`ARACELI_TEXT` (bright magenta, assistant output), `SYSTEM_MESSAGE`
-(dim gray, standard system messages including tool executions and
-context usage), and `SYSTEM_ERROR` (red, whole-line errors: failed
-tools, warnings, initialization and communication errors, and
-context usage at or above 90%). - Automated tests for PDF and
-web tools (128 tests total). - Startup verification of the model's
-effective context length through LM Studio's native API
-(`GET /api/v0/models`, reporting `loaded_context_length`), with a
-prominent warning when the server context is smaller than the
-configured one, and a context usage indicator based on the verified
-value. - API error transparency: connection and API errors include
-the server's response body, and context-size rejections
-(`exceed_context_size_error`) produce a targeted hint with the
-server's actual limit. - Lean startup context: the compact runtime
-brief `docs/araceli_brief.md` is injected instead of the full
-development documentation, `system_prompt.md` is condensed, tool
-descriptions are compressed, and the startup banner shows an
-approximate per-component token breakdown (instructions, project
-brief, memory/manifest, tools). - Context usage reported after every
-action that changes it: model responses, `/reset`, and project
-load/unload (`/project load` also reports the token cost of the
-project context file). - Project workspaces: user-side registry
-(`/project add`, `list`, `remove`), per-session activation (`load`,
-`unload`), workspace-scoped file tools, and the per-project
-`ARACELI_CONTEXT.md` context file with snapshot injection (219 tests
-total).
+Implemented:
 
-Not implemented: - Conversation summarization, pruning, or compaction. -
-Physical memory deletion through
-model tools. - Semantic or embedding-based memory search. - OCR for
-scanned PDFs without a text layer. - Web search quality guarantees:
-some sites block automated access (HTTP 403) and the model must fall
-back to other sources. - A persistent
-tool-execution audit log (deliberately deferred). - Automated tests for
-the conversation loop (command handling, model interaction).
+-   Local LM Studio integration through the OpenAI Python client;
+    console conversation loop; bounded tool-calling loop with a
+    configurable round budget (`config.py`, default 16) and a
+    dedicated budget-exhaustion report.
+-   Restricted arithmetic (whitespace-normalized multi-line
+    expressions) and workspace file tools; file validation and
+    pre-overwrite backups; full file access inside active project
+    workspaces (any extension, text attempted as UTF-8).
+-   Persistent memory (SQLite) with save/search/update tools, a
+    startup snapshot refreshed on `/reset`, and user-side `/memory`
+    and `/forget` commands.
+-   Project workspaces: registry (`add`, `list`, `remove`, `info`),
+    per-session activation (`load`, `unload`) with context-cost
+    reporting, workspace-scoped file tools, and the per-project
+    `.ARACELI_CONTEXT.md` context file (compact, snapshot-injected,
+    reconciled against reality after failed verifications).
+-   PDF analysis (`read_pdf` with page selection, `list_documents`)
+    over the active project and the configured documents directories.
+-   Controlled web research (`web_search`, `web_fetch`) with SSRF
+    protections, content-type limits, retries, and OS-trust-store
+    TLS.
+-   Resilience: startup dependency guard with shell-specific
+    activation instructions; launchers `run.bat` / `run.sh`; parsing
+    of both embedded tool-markup styles; console output resilient to
+    console encodings.
+-   Colored console output (`console.py`) with semantic roles
+    (`USER_INPUT`, `ARACELI_INPUT`/`ARACELI_TEXT`, `SYSTEM_MESSAGE`,
+    `SYSTEM_ERROR`) and `NO_COLOR` support.
+-   Startup verification of the server context length (LM Studio
+    native API) with warnings; API error transparency with targeted
+    hints; context usage reported after every context-changing action
+    (responses, `/reset`, project load/unload), including tokens per
+    second after model responses.
+-   Automated test suite: 228 tests
+    (`python -m unittest discover -s tests -t .`).
+-   Version control with git and a private GitHub repository; `data/`,
+    `.venv/`, `.backups/`, and `__pycache__/` are not tracked.
+
+Not implemented:
+
+-   Conversation summarization, pruning, or compaction.
+-   Physical memory deletion through model tools.
+-   Semantic or embedding-based memory search.
+-   OCR for scanned PDFs without a text layer.
+-   Web search quality guarantees (some sites return HTTP 403 to
+    automated access).
+-   A persistent tool-execution audit log (deliberately deferred).
+-   Comprehensive automated tests for the conversation loop (the tool
+    budget has coverage; the full loop does not).
 
 ## Development Priorities
 
