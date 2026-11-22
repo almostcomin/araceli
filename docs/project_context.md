@@ -325,11 +325,17 @@ application does not currently retrieve the loaded model's effective
 context length automatically.
 
 The direct dependencies are `openai`, `pypdf` (PDF text extraction),
-`ddgs` (DuckDuckGo search), and `truststore` (Windows certificate
-store for TLS), pinned in `requirements.txt`. Rebuild the environment
+`ddgs` (DuckDuckGo search), `truststore` (Windows certificate
+store for TLS), and `fonttools` (embedded font parsing), pinned in
+`requirements.txt`. Rebuild the environment
 with `python -m venv .venv` followed by
 `.venv\Scripts\pip install -r requirements.txt`. Run the test suite
-with `python -m unittest discover -s tests -t .`.
+with `python -m unittest discover -s tests -t .`. The launcher
+scripts `run.bat` (CMD) and `run.sh` (POSIX shells such as Git Bash)
+activate the virtual environment and start the application; if a
+dependency is missing at startup, the import guard prints
+shell-specific activation instructions for CMD, PowerShell, and Git
+Bash.
 
 ## Current Status
 

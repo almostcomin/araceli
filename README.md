@@ -103,10 +103,22 @@ No other services, accounts, or API keys are needed.
 
 ## Running
 
+Use the launcher for your shell (recommended):
+
+```text
+run.bat        CMD (double-click also works)
+./run.sh       Git Bash / POSIX shells
+```
+
+Or activate the virtual environment manually:
+
 ```bat
 .venv\Scripts\activate.bat
 python main.py
 ```
+
+If a dependency is missing at startup, the application prints
+shell-specific activation instructions instead of a raw traceback.
 
 Console commands:
 

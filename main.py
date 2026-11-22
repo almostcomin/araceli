@@ -13,16 +13,22 @@ try:
 
     from tools import execute_tool, set_workspace
 except ModuleNotFoundError as error:
+    _root = Path(__file__).resolve().parent
     print("=" * 55)
     print("MISSING DEPENDENCY")
     print(f"    {error}")
     print()
     print("This usually means the wrong virtual environment is active.")
     print("Activate the virtual environment of THIS project directory:")
-    print(
-        "    "
-        + str(Path(__file__).resolve().parent / ".venv" / "Scripts" / "activate.bat")
-    )
+    print(f"    CMD:        {_root}\\.venv\\Scripts\\activate.bat")
+    print(f"    PowerShell: {_root}\\.venv\\Scripts\\Activate.ps1")
+    print("    Git Bash:   source "
+          f"{_root}/.venv/Scripts/activate")
+    print()
+    print("Or start the app without activation:")
+    print(f"    {_root}/.venv/Scripts/python.exe main.py")
+    print()
+    print("Or use the launchers: run.bat (CMD) / run.sh (Git Bash)")
     print()
     print("If the dependency is still missing, install requirements:")
     print("    pip install -r requirements.txt")
