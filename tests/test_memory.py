@@ -265,8 +265,10 @@ class MemoryStoreTestCase(unittest.TestCase):
         self.assertEqual(updated.status, "active")
 
     def test_update_rejects_unknown_id(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as context:
             update_memory(999, content="Nope", db_path=self.db_path)
+
+        self.assertIn("search_memories", str(context.exception))
 
     def test_update_rejects_missing_fields(self):
         record = self._save_sample()
@@ -505,8 +507,10 @@ class MemoryDeletionTestCase(unittest.TestCase):
         self.assertEqual(count_memories(db_path=self.db_path), 0)
 
     def test_delete_unknown_id_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as context:
             delete_memory(999, db_path=self.db_path)
+
+        self.assertIn("/memory", str(context.exception))
 
     def test_delete_rejects_invalid_ids(self):
         with self.assertRaises(ValueError):

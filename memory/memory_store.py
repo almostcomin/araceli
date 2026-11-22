@@ -320,7 +320,11 @@ def update_memory(
             existing = _fetch_by_id(connection, memory_id)
 
             if existing is None:
-                raise ValueError(f"Memory not found: id {memory_id}.")
+                raise ValueError(
+                    "Memory not found: id "
+                    f"{memory_id}. Use search_memories to find valid "
+                    "memory ids."
+                )
 
             if "category" in updates or "title" in updates:
                 final_category = updates.get("category", existing.category)
@@ -395,7 +399,10 @@ def delete_memory(memory_id: int, db_path: DbPath = None) -> MemoryRecord:
             existing = _fetch_by_id(connection, memory_id)
 
             if existing is None:
-                raise ValueError(f"Memory not found: id {memory_id}.")
+                raise ValueError(
+                    "Memory not found: id "
+                    f"{memory_id}. Use /memory to see valid memory ids."
+                )
 
             connection.execute(
                 "DELETE FROM memories WHERE id = ?",
