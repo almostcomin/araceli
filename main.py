@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 import urllib.request
 
 from datetime import datetime, timezone
@@ -659,8 +660,16 @@ def estimate_tokens(text: str) -> int:
     return max(1, round(len(text) / 4))
 
 
-def print_context_usage(used_tokens: int, context_limit: int) -> None:
-    """Print the standard context usage line with threshold colors."""
+def print_context_usage(
+    used_tokens: int,
+    context_limit: int,
+    tokens_per_second: float | None = None,
+) -> None:
+    """Print the standard context usage line with threshold colors.
+
+    When tokens_per_second is provided (generation speed measured in
+    generate_response), it is appended to the line.
+    """
 
     available_tokens = max(0, context_limit - used_tokens)
     usage_percentage = (used_tokens / context_limit) * 100
@@ -670,14 +679,16 @@ def print_context_usage(used_tokens: int, context_limit: int) -> None:
     else:
         context_style = SYSTEM_MESSAGE
 
-    print(
-        paint(
-            f"\nContext: {usage_percentage:.1f}% "
-            f"({used_tokens:,}/{context_limit:,} "
-            f"tokens) - {available_tokens:,} free",
-            *context_style,
-        )
+    line = (
+        f"\nContext: {usage_percentage:.1f}% "
+        f"({used_tokens:,}/{context_limit:,} "
+        f"tokens) - {available_tokens:,} free"
     )
+
+    if tokens_per_second is not None:
+        line += f" | {tokens_per_second:.1f} tok/s"
+
+    print(paint(line, *context_style))
 
 
 def query_server_context() -> int | None:
@@ -896,8 +907,25 @@ def generate_response(
     client: OpenAI,
     messages: list[dict[str, Any]],
     tool_definitions: list[dict[str, Any]],
-) -> tuple[str, int | None, str | None]:
-    """Generate a response and handle tool calls."""
+) -> tuple[str, int | None, str | None, float | None]:
+    """Generate a response and handle tool calls.
+
+    Returns the answer, the context tokens used, the finish reason,
+    and the average generation speed in tokens per second.
+    """
+
+    generation_elapsed = 0.0
+    completion_tokens_total = 0
+
+    def _tokens_per_second() -> float | None:
+        """Average generation speed across the model calls."""
+
+        if completion_tokens_total > 0 and generation_elapsed > 0:
+            return round(
+                completion_tokens_total / generation_elapsed, 1
+            )
+
+        return None
 
     for round_index in range(MAX_TOOL_ROUNDS + 1):
 
@@ -912,7 +940,11 @@ def generate_response(
             request_arguments["tools"] = tool_definitions
             request_arguments["tool_choice"] = "auto"
 
+        call_started = time.perf_counter()
+
         response = client.chat.completions.create(**request_arguments)
+
+        generation_elapsed += time.perf_counter() - call_started
 
         assistant_message = response.choices[0].message
         finish_reason = response.choices[0].finish_reason
@@ -925,13 +957,21 @@ def generate_response(
                 usage.prompt_tokens + usage.completion_tokens
             )
 
+            if usage.completion_tokens:
+                completion_tokens_total += usage.completion_tokens
+
         messages.append(
             assistant_message.model_dump(exclude_none=True)
         )
 
         if finish_reason == "length":
             answer = assistant_message.content or ""
-            return answer.strip(), context_tokens, finish_reason
+            return (
+                answer.strip(),
+                context_tokens,
+                finish_reason,
+                _tokens_per_second(),
+            )
 
         if not assistant_message.tool_calls:
             answer = assistant_message.content
@@ -978,7 +1018,12 @@ def generate_response(
                     )
                 )
 
-            return answer.strip(), context_tokens, finish_reason
+            return (
+                answer.strip(),
+                context_tokens,
+                finish_reason,
+                _tokens_per_second(),
+            )
 
         for tool_call in assistant_message.tool_calls:
 
@@ -1650,17 +1695,23 @@ def main() -> None:
             print("\n" + paint("Araceli: ", *ARACELI_INPUT), end="", flush=True)
 
             try:
-                answer, context_tokens, finish_reason = generate_response(
-                    client,
-                    messages,
-                    tool_definitions,
+                answer, context_tokens, finish_reason, tokens_per_second = (
+                    generate_response(
+                        client,
+                        messages,
+                        tool_definitions,
+                    )
                 )
 
                 print(paint(answer, *ARACELI_TEXT))
 
                 if context_tokens is not None:
                     last_context_usage = context_tokens
-                    print_context_usage(context_tokens, context_limit)
+                    print_context_usage(
+                        context_tokens,
+                        context_limit,
+                        tokens_per_second,
+                    )
                 else:
                     print(paint("\nContext usage: unavailable", *SYSTEM_MESSAGE))
 
