@@ -1652,6 +1652,37 @@ def main() -> None:
 
     last_context_usage = None
 
+    def ensure_server_context() -> None:
+        """Retry the server context verification until it succeeds."""
+
+        nonlocal server_context, context_limit
+
+        if server_context is not None:
+            return
+
+        server_context = query_server_context()
+
+        if server_context is not None:
+            context_limit = server_context
+            print(
+                paint(
+                    f"\n[Server context verified: "
+                    f"{server_context:,} tokens]",
+                    *SYSTEM_MESSAGE,
+                )
+            )
+
+            if server_context < CONTEXT_LENGTH:
+                print(
+                    paint(
+                        f"[WARNING] Server model context: "
+                        f"{server_context:,} tokens - smaller than "
+                        f"the configured {CONTEXT_LENGTH:,}. "
+                        "Requests larger than it will fail.",
+                        *SYSTEM_ERROR,
+                    )
+                )
+
     if server_context is not None and server_context < CONTEXT_LENGTH:
         print(
             paint(
@@ -1933,6 +1964,8 @@ def main() -> None:
                 )
 
                 print(paint(answer, *ARACELI_TEXT))
+
+                ensure_server_context()
 
                 if context_tokens is not None:
                     last_context_usage = context_tokens
