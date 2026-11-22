@@ -140,11 +140,13 @@ The model can request these tools:
     Returns active memories by default, most recently updated first.
 -   `update_memory(memory_id, ...)`: updates fields of an existing
     memory by id, including changing its status to `superseded`.
--   `read_pdf(path)`: extracts text from a PDF document. Search order:
+-   `read_pdf(path, pages)`: extracts text from a PDF document. Search order:
     the active project directory (if one is active), then the
     configured documents directories. Paths are relative to those
-    roots. Limits: 10 MB, 50 pages, 100,000 extracted characters.
-    Scanned PDFs without a text layer return no text.
+    roots. Limits: 10 MB, 50 pages, 24,000 extracted characters
+    (truncated results suggest using the optional `pages` parameter,
+    e.g. `1-3`, to read specific ranges). Scanned PDFs without a text
+    layer return no text.
 -   `list_documents()`: lists the PDF documents available in the
     active project (if any) and the configured documents directories
     (name, size, modification time, and which root each belongs to).

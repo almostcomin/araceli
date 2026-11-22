@@ -88,6 +88,72 @@ def _make_pdf(text: str, pages: int = 1) -> bytes:
     return bytes(output)
 
 
+def _make_multipage_pdf(page_texts):
+    """Build a valid PDF with a different text per page."""
+
+    streams = [
+        f"BT /F1 10 Tf 40 750 Td ({text}) Tj ET".encode("latin-1")
+        for text in page_texts
+    ]
+
+    objects: dict[int, bytes] = {}
+    count = len(streams)
+    page_ids = list(range(3, 3 + count))
+    content_ids = list(range(3 + count, 3 + 2 * count))
+    font_id = 3 + 2 * count
+
+    objects[1] = b"<< /Type /Catalog /Pages 2 0 R >>"
+    objects[2] = (
+        "<< /Type /Pages /Kids ["
+        + " ".join(f"{page_id} 0 R" for page_id in page_ids)
+        + f"] /Count {count} >>"
+    ).encode("latin-1")
+
+    for index, page_id in enumerate(page_ids):
+        objects[page_id] = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Resources << /Font << /F1 {font_id} 0 R >> >> "
+            f"/Contents {content_ids[index]} 0 R >>"
+        ).encode("latin-1")
+
+    for index, content_id in enumerate(content_ids):
+        stream = streams[index]
+        objects[content_id] = (
+            b"<< /Length " + str(len(stream)).encode() + b" >>\n"
+            b"stream\n" + stream + b"\nendstream"
+        )
+
+    objects[font_id] = (
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+    )
+
+    output = bytearray(b"%PDF-1.4\n")
+    offsets: dict[int, int] = {}
+
+    for object_id in sorted(objects):
+        offsets[object_id] = len(output)
+        output += f"{object_id} 0 obj\n".encode("latin-1")
+        output += objects[object_id] + b"\nendobj\n"
+
+    xref_position = len(output)
+    total = max(objects) + 1
+
+    output += f"xref\n0 {total}\n".encode("latin-1")
+    output += b"0000000000 65535 f \n"
+
+    for object_id in range(1, total):
+        output += (
+            f"{offsets[object_id]:010d} 00000 n \n".encode("latin-1")
+        )
+
+    output += (
+        f"trailer\n<< /Size {total} /Root 1 0 R >>\n"
+        f"startxref\n{xref_position}\n%%EOF\n"
+    ).encode("latin-1")
+
+    return bytes(output)
+
+
 class PdfReadingTestCase(TempProjectTestCase):
     """Tests for PDF extraction from the private documents directory."""
 
@@ -135,6 +201,56 @@ class PdfReadingTestCase(TempProjectTestCase):
 
         self.assertEqual(result["text"], "")
         self.assertIn("scanned image", result["note"])
+
+    def test_reads_selected_page_ranges(self):
+        (self.documents_dir / "doc.pdf").write_bytes(
+            _make_multipage_pdf(["Page one", "Page two", "Page three"])
+        )
+
+        result = read_pdf("doc.pdf", pages="2-3")
+
+        self.assertEqual(result["pages_read"], [2, 3])
+        self.assertIn("Page two", result["text"])
+        self.assertIn("Page three", result["text"])
+        self.assertNotIn("Page one", result["text"])
+
+    def test_reads_single_page_selection(self):
+        (self.documents_dir / "doc.pdf").write_bytes(
+            _make_multipage_pdf(["Alpha", "Beta", "Gamma"])
+        )
+
+        result = read_pdf("doc.pdf", pages="2")
+
+        self.assertEqual(result["pages_read"], [2])
+        self.assertIn("Beta", result["text"])
+        self.assertNotIn("Alpha", result["text"])
+
+    def test_rejects_selection_out_of_range(self):
+        (self.documents_dir / "doc.pdf").write_bytes(
+            _make_multipage_pdf(["Alpha"])
+        )
+
+        with self.assertRaises(ValueError):
+            read_pdf("doc.pdf", pages="5")
+
+    def test_rejects_invalid_selection_format(self):
+        (self.documents_dir / "doc.pdf").write_bytes(
+            _make_multipage_pdf(["Alpha"])
+        )
+
+        for selection in ("abc", "0", "-2", "1,,2"):
+            with self.subTest(selection=selection):
+                with self.assertRaises(ValueError):
+                    read_pdf("doc.pdf", pages=selection)
+
+    def test_truncation_note_suggests_page_ranges(self):
+        long_text = "word " * 6000
+        (self.documents_dir / "big.pdf").write_bytes(_make_pdf(long_text))
+
+        result = read_pdf("big.pdf")
+
+        self.assertTrue(result["text_truncated"])
+        self.assertIn("pages parameter", result["note"])
 
     def test_rejects_parent_traversal(self):
         with self.assertRaises(ValueError):

@@ -73,7 +73,7 @@ MAX_LIST_RESULTS = 200
 
 MAX_PDF_FILE_SIZE = 10 * 1024 * 1024
 MAX_PDF_PAGES = 50
-MAX_PDF_TEXT_CHARS = 100_000
+MAX_PDF_TEXT_CHARS = 24_000
 MAX_DOCUMENT_LIST_RESULTS = 100
 
 DEFAULT_WEB_RESULTS = 8
@@ -586,8 +586,12 @@ def _get_document_roots() -> list[tuple[Path, str]]:
 
 def _resolve_document_path(
     relative_path: str,
-) -> tuple[Path, str]:
-    """Resolve a document path against the configured roots."""
+) -> tuple[Path, str, str]:
+    """Resolve a document path against the configured roots.
+
+    Returns the resolved path, the root kind and the path relative
+    to that root.
+    """
 
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise ValueError("A non-empty relative path is required.")
@@ -607,7 +611,11 @@ def _resolve_document_path(
             continue
 
         if resolved_path.is_file():
-            return resolved_path, root_kind
+            return (
+                resolved_path,
+                root_kind,
+                resolved_path.relative_to(root).as_posix(),
+            )
 
     raise FileNotFoundError(
         "Document not found in the configured documents directories. "
@@ -615,7 +623,57 @@ def _resolve_document_path(
     )
 
 
-def read_pdf(path: str) -> dict[str, Any]:
+def _parse_page_selection(pages: str, page_count: int) -> list[int]:
+    """Parse a page selection like "1-3", "2" or "1,3-5" (1-based)."""
+
+    if not isinstance(pages, str) or not pages.strip():
+        raise ValueError(
+            "pages must be a non-empty selection like '1-3' or '1,3-5'."
+        )
+
+    selected: list[int] = []
+
+    for part in pages.split(","):
+        part = part.strip()
+
+        if not part:
+            raise ValueError(f"Invalid page selection: '{part}'.")
+
+        if "-" in part:
+            start_text, _, end_text = part.partition("-")
+            start_text = start_text.strip()
+            end_text = end_text.strip()
+
+            if not start_text.isdigit() or not end_text.isdigit():
+                raise ValueError(f"Invalid page range: '{part}'.")
+
+            start, end = int(start_text), int(end_text)
+
+            if start < 1 or end < start:
+                raise ValueError(f"Invalid page range: '{part}'.")
+
+            selected.extend(range(start, end + 1))
+        else:
+            if not part.isdigit():
+                raise ValueError(f"Invalid page selection: '{part}'.")
+
+            selected.append(int(part))
+
+    selected = sorted(set(selected))
+
+    if selected[0] < 1:
+        raise ValueError("Page numbers start at 1.")
+
+    if selected[-1] > page_count:
+        raise ValueError(
+            f"Page selection exceeds the document page count "
+            f"({page_count} pages)."
+        )
+
+    return selected
+
+
+def read_pdf(path: str, pages: str | None = None) -> dict[str, Any]:
     """Extract text from a PDF in the active workspace or documents directories."""
 
     if not isinstance(path, str) or not path.strip():
@@ -624,7 +682,7 @@ def read_pdf(path: str) -> dict[str, Any]:
     if Path(path).suffix.lower() != ".pdf":
         raise ValueError("Only PDF documents are supported.")
 
-    file_path, root_kind = _resolve_document_path(path)
+    file_path, root_kind, relative_path = _resolve_document_path(path)
 
     file_size = file_path.stat().st_size
 
@@ -640,7 +698,17 @@ def read_pdf(path: str) -> dict[str, Any]:
     if page_count > MAX_PDF_PAGES:
         raise ValueError("Document exceeds the maximum allowed page count.")
 
-    pages_text = [page.extract_text() or "" for page in reader.pages]
+    if pages is not None:
+        selected_pages = _parse_page_selection(pages, page_count)
+
+        pages_text = [
+            reader.pages[index - 1].extract_text() or ""
+            for index in selected_pages
+        ]
+    else:
+        selected_pages = list(range(1, page_count + 1))
+
+        pages_text = [page.extract_text() or "" for page in reader.pages]
 
     full_text = "\n\n".join(pages_text)
 
@@ -650,20 +718,27 @@ def read_pdf(path: str) -> dict[str, Any]:
         full_text = full_text[:MAX_PDF_TEXT_CHARS]
         truncated = True
 
-    relative_path = file_path.name
+    note = None
+
+    if not full_text.strip():
+        note = (
+            "No text could be extracted. The document may be a "
+            "scanned image without a text layer."
+        )
+    elif truncated:
+        note = (
+            "Text was truncated because it exceeds the size limit. "
+            "Use the pages parameter to read specific page ranges."
+        )
 
     return {
         "path": relative_path,
         "documents_dir": root_kind,
         "page_count": page_count,
+        "pages_read": selected_pages,
         "text": full_text,
         "text_truncated": truncated,
-        "note": (
-            "No text could be extracted. The document may be a "
-            "scanned image without a text layer."
-            if not full_text.strip()
-            else None
-        ),
+        "note": note,
         "source": {
             "source_type": "pdf_text_extraction",
             "path": relative_path,
@@ -1086,11 +1161,11 @@ def execute_tool(name: str, arguments: str) -> str:
             )
 
         elif name == "read_pdf":
-            if set(parsed_arguments) != {"path"}:
+            if set(parsed_arguments) - {"path", "pages"}:
                 raise ValueError("Invalid read_pdf arguments.")
 
             target = parsed_arguments["path"]
-            result = read_pdf(target)
+            result = read_pdf(target, parsed_arguments.get("pages"))
 
         elif name == "list_documents":
             if set(parsed_arguments):

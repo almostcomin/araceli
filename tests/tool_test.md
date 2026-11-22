@@ -94,23 +94,25 @@ Updates an existing persistent memory by id.
 
 ### read_pdf
 Extracts text from a PDF document in the configured documents
-directories (external directory from `data/documents_path.txt` plus
-internal `data/documents/`).
+directories (active project first, then external/internal documents
+directories).
 
 **Parameters:**
 - `path` (required) — Path relative to the documents directories,
   e.g. `bill.pdf`. Use `list_documents` to discover available files
+- `pages` (optional) — Page selection like `1-3`, `2` or `1,3-5`;
+  omit for all pages
 
 **Restrictions:**
 - Cannot escape the documents directories (no traversal, no absolute
-  paths); the external root takes priority on name collisions
+  paths)
 - Only `.pdf` files
-- Maximum 10 MB and 50 pages; extracted text is capped at 100,000
-  characters
+- Maximum 10 MB and 50 pages; extracted text is capped at 24,000
+  characters (truncated results suggest using page ranges)
 - Scanned PDFs without a text layer return no text (a note explains it)
-- Returns source metadata: SHA-256, size, page count, extraction
-  timestamp, and which directory the file came from (the external
-  absolute path is never exposed to the model)
+- Returns source metadata: SHA-256, size, page count, pages read,
+  extraction timestamp, and which directory the file came from (the
+  external absolute path is never exposed to the model)
 
 ### list_documents
 Lists the PDF documents available in the configured documents

@@ -169,9 +169,10 @@ BASE_TOOL_DEFINITIONS = [
             "name": "read_pdf",
             "description": (
                 "Extract text from a PDF (search order: active "
-                "project, then documents directories). Includes page "
-                "count and SHA-256; scanned PDFs return no text. Use "
-                "list_documents to discover files."
+                "project, then documents directories). Optional pages "
+                "parameter selects specific page ranges - use it for "
+                "long documents to keep the context small. Includes "
+                "page count and SHA-256; scanned PDFs return no text."
             ),
             "parameters": {
                 "type": "object",
@@ -179,7 +180,14 @@ BASE_TOOL_DEFINITIONS = [
                     "path": {
                         "type": "string",
                         "description": "e.g. 'bill.pdf'",
-                    }
+                    },
+                    "pages": {
+                        "type": "string",
+                        "description": (
+                            "Optional page selection, e.g. '1-3' or "
+                            "'1,3-5'. Omit for all pages."
+                        ),
+                    },
                 },
                 "required": ["path"],
                 "additionalProperties": False,
