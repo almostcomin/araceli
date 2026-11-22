@@ -184,8 +184,10 @@ The model can request these tools:
     three times.
 -   `web_fetch(url)`: fetches a public http(s) page and returns its
     readable text (HTML stripped of scripts and styles) with the final
-    URL, content type, and fetch timestamp. Limits: 512 KB raw, 24,000
-    text characters, 15 second timeout.
+    URL, content type, and fetch timestamp. Limits: 4 MB raw download
+    (larger pages are processed partially and the result marked as
+    truncated), 24,000 text characters, 15 second timeout. gzip
+    responses are decompressed.
 
 There is no confirmed tool for general shell execution, arbitrary Python
 execution, file deletion, memory deletion, or external API access

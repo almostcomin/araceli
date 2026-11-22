@@ -150,9 +150,11 @@ Fetches a public web page and returns its readable text.
 - Only http/https on ports 80 and 443
 - Only public addresses: private, loopback, link-local, reserved and
   multicast addresses are rejected (including redirect targets)
-- Only `text/html`, `application/xhtml+xml` and `text/plain` content
-- Maximum 512 KB raw and 24,000 characters of text; 15 second timeout
-- Returns the final URL, content type, and fetch timestamp
+- Only `text/html`, `application/xhtml+xml` and `text/plain` content;
+  gzip responses are decompressed
+- Maximum 4 MB raw download and 24,000 characters of text (larger
+  pages are processed partially and marked truncated); 15 second
+  timeout; returns the final URL, content type, and fetch timestamp
 
 ## Usage Notes
 

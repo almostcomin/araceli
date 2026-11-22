@@ -1,4 +1,5 @@
 import ast
+import gzip
 import hashlib
 import ipaddress
 import io
@@ -14,6 +15,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
+import zlib
 
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -83,7 +85,8 @@ WEB_SEARCH_ATTEMPTS = 3
 WEB_SEARCH_RETRY_DELAY_SECONDS = 2.0
 
 FETCH_TIMEOUT_SECONDS = 15
-MAX_FETCH_BYTES = 512 * 1024
+MAX_FETCH_BYTES = 4 * 1024 * 1024
+MAX_DECOMPRESSED_BYTES = 16 * 1024 * 1024
 MAX_FETCH_TEXT_CHARS = 24_000
 ALLOWED_FETCH_PORTS = {80, 443}
 
@@ -1019,8 +1022,26 @@ def _validate_public_http_url(url: str) -> str:
     return validated_url
 
 
+def _decompress_gzip_capped(data: bytes) -> bytes:
+    """Decompress gzip data with a hard cap on the output size."""
+
+    decompressor = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    output = bytearray()
+    pending = data
+
+    while pending and len(output) <= MAX_DECOMPRESSED_BYTES:
+        chunk = decompressor.decompress(pending, 262144)
+        output += chunk
+        pending = decompressor.unconsumed_tail
+
+        if not chunk:
+            break
+
+    return bytes(output)
+
+
 def web_fetch(url: str) -> dict[str, Any]:
-    """Fetch a public web page and return its readable text."""
+    """Fetch a public http(s) page and return its readable text."""
 
     validated_url = _validate_public_http_url(url)
 
@@ -1035,6 +1056,7 @@ def web_fetch(url: str) -> dict[str, Any]:
                 "text/html, application/xhtml+xml, text/plain;q=0.9, "
                 "*/*;q=0.5"
             ),
+            "Accept-Encoding": "gzip",
         },
     )
 
@@ -1046,22 +1068,30 @@ def web_fetch(url: str) -> dict[str, Any]:
         final_url = response.geturl()
         content_type = response.headers.get("Content-Type", "")
         charset = response.headers.get_content_charset() or "utf-8"
-        raw_body = response.read(MAX_FETCH_BYTES + 1)
-
-    if len(raw_body) > MAX_FETCH_BYTES:
-        raise ValueError("The page exceeds the maximum allowed size.")
+        content_encoding = (
+            response.headers.get("Content-Encoding") or ""
+        ).lower()
+        raw_body = response.read(MAX_FETCH_BYTES)
 
     _validate_public_http_url(final_url)
+
+    body_bytes = raw_body
+
+    if content_encoding == "gzip" or raw_body[:2] == b"\x1f\x8b":
+        try:
+            body_bytes = _decompress_gzip_capped(raw_body)
+        except zlib.error:
+            raise ValueError("The page could not be decompressed.")
 
     content_type_lower = content_type.lower()
 
     if "text/html" in content_type_lower or "xhtml" in content_type_lower:
         extractor = _HTMLTextExtractor()
-        extractor.feed(raw_body.decode(charset, errors="replace"))
+        extractor.feed(body_bytes.decode(charset, errors="replace"))
         page_text = extractor.get_text()
         page_title = extractor.title.strip()
     elif "text/plain" in content_type_lower or not content_type_lower:
-        page_text = raw_body.decode(charset, errors="replace")
+        page_text = body_bytes.decode(charset, errors="replace")
         page_title = ""
     else:
         raise ValueError(f"Unsupported content type: {content_type}")

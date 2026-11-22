@@ -767,9 +767,9 @@ class WebFetchTestCase(unittest.TestCase):
             with self.assertRaises(ValueError):
                 web_fetch(PUBLIC_IP_URL)
 
-    def test_web_fetch_rejects_oversized_page(self):
+    def test_web_fetch_truncates_oversized_page(self):
         response = _FakeResponse(
-            b"x" * (tools.MAX_FETCH_BYTES + 1),
+            b"<html><body>" + b"<p>word </p>" * 400000 + b"</body></html>",
             "text/html",
             PUBLIC_IP_URL,
         )
@@ -777,8 +777,28 @@ class WebFetchTestCase(unittest.TestCase):
         with mock.patch(
             "urllib.request.urlopen", return_value=response
         ):
-            with self.assertRaises(ValueError):
-                web_fetch(PUBLIC_IP_URL)
+            result = web_fetch(PUBLIC_IP_URL)
+
+        self.assertTrue(result["text_truncated"])
+        self.assertEqual(len(result["text"]), tools.MAX_FETCH_TEXT_CHARS)
+
+    def test_web_fetch_handles_gzip_encoding(self):
+        import gzip
+
+        response = _FakeResponse(
+            gzip.compress(SAMPLE_HTML.encode("utf-8")),
+            "text/html; charset=utf-8",
+            PUBLIC_IP_URL,
+        )
+
+        with mock.patch(
+            "urllib.request.urlopen", return_value=response
+        ):
+            result = web_fetch(PUBLIC_IP_URL)
+
+        self.assertEqual(result["title"], "Sample Page")
+        self.assertIn("First paragraph.", result["text"])
+        self.assertEqual(result["source"]["content_type"], "text/html; charset=utf-8")
 
     def test_web_fetch_rejects_plain_text_truncation_marker(self):
         response = _FakeResponse(
