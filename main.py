@@ -1426,6 +1426,10 @@ def main() -> None:
 
     server_context = query_server_context()
 
+    context_limit = (
+        server_context if server_context is not None else CONTEXT_LENGTH
+    )
+
     if server_context is not None and server_context < CONTEXT_LENGTH:
         print(
             paint(
