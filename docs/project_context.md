@@ -48,8 +48,11 @@ application-side validation.
 ## Startup and Conversation Lifecycle
 
 1.  `main.py` loads `system_prompt.md`.
-2.  At startup, `main.py` loads `docs/project_context.md` once, if the
-    file exists and contains readable, non-empty UTF-8 text.
+2.  At startup, `main.py` loads `docs/araceli_brief.md` once, if the
+    file exists and contains readable, non-empty UTF-8 text. The brief
+    is the compact runtime context injected into every conversation;
+    `docs/project_context.md` (this document) is development
+    documentation and is NOT injected.
 3.  `main.py` initializes the memory database (`data/araceli.db`),
     creating the schema if needed, and builds a memory snapshot from
     the most recently updated active memories (default 15). If memory
@@ -64,7 +67,7 @@ application-side validation.
     `/reset` (new conversation), `/memory` (list active memories),
     `/forget <id>` (physically delete a memory), `/project`
     (manage project workspaces: `status`, `list`, `info [name]`,
-    `add <path>`, `remove <name>`, `use <name>`, `off`), and `/exit`
+    `add <path>`, `remove <name>`, `load <name>`, `unload`), and `/exit`
     (quit). Memory management and project management commands are
     handled entirely by Python and are never exposed to the model.
     Activating or deactivating a project (or removing the active one)
@@ -87,13 +90,15 @@ application-side validation.
 10. If an interaction raises an exception, the previous conversation
     history is restored.
 
-The project context is loaded once per application execution. `/reset`
-creates a new conversation using the already combined system prompt; it
-does not reread the project context file. Unlike the project context,
-the memory snapshot is refreshed on `/reset`, because memory contents
-change during normal use.
+The runtime brief is loaded once per application execution. `/reset`
+creates a new conversation using a freshly composed prompt (the
+memory snapshot and the active project context are reread; the brief
+and behavioral instructions are not) and prints the resulting context
+usage. Loading or unloading a project (`/project load <name>`,
+`/project unload`) also recomposes the prompt, starts a new
+conversation, and prints the context usage.
 
-If `docs/project_context.md` is missing, empty, or cannot be read, the
+If `docs/araceli_brief.md` is missing, empty, or cannot be read, the
 application displays a warning and continues without project-specific
 context.
 
@@ -244,8 +249,11 @@ them.
     already registered (by path or by folder name, case-insensitive).
     `remove` deletes the registry entry; the directory is untouched.
 -   **Active project:** at most one per session, not persisted across
-    application restarts. `/project use <name>` activates it and
-    `/project off` deactivates it; both start a new conversation.
+    application restarts. `/project load <name>` activates it and
+    `/project unload` deactivates it; both start a new conversation
+    and print the resulting context usage. Loading also reports the
+    approximate token cost of the project context file; unloading
+    frees those tokens.
     While a project is active, `tools.set_workspace` (Python-side
     only) scopes the file tools to the project directory with full
     access: `list_files` lists every file and directory regardless of
@@ -345,7 +353,9 @@ tool-calling loop. - Restricted arithmetic and project-file tools. -
 File validation and pre-overwrite backups. - Context-usage reporting
 when the API returns usage data. - Warning for responses terminated with
 `finish_reason="length"`. - Automatic loading of
-`docs/project_context.md` once at application startup. - Persistent
+`docs/araceli_brief.md` once at application startup (the compact
+runtime brief; this document is development documentation and is not
+injected). - Persistent
 memory using SQLite (`data/araceli.db`) with save, search, and update
 tools, a startup memory snapshot, and snapshot refresh on `/reset`. -
 User-side memory management console commands: `/memory` (list) and
@@ -381,10 +391,18 @@ configured one, and a context usage indicator based on the verified
 value. - API error transparency: connection and API errors include
 the server's response body, and context-size rejections
 (`exceed_context_size_error`) produce a targeted hint with the
-server's actual limit. - Project workspaces: user-side registry
-(`/project add`, `list`, `remove`), per-session activation (`use`,
-`off`), workspace-scoped file tools, and the per-project
-`ARACELI_CONTEXT.md` context file with snapshot injection (164 tests
+server's actual limit. - Lean startup context: the compact runtime
+brief `docs/araceli_brief.md` is injected instead of the full
+development documentation, `system_prompt.md` is condensed, tool
+descriptions are compressed, and the startup banner shows an
+approximate per-component token breakdown (instructions, project
+brief, memory/manifest, tools). - Context usage reported after every
+action that changes it: model responses, `/reset`, and project
+load/unload (`/project load` also reports the token cost of the
+project context file). - Project workspaces: user-side registry
+(`/project add`, `list`, `remove`), per-session activation (`load`,
+`unload`), workspace-scoped file tools, and the per-project
+`ARACELI_CONTEXT.md` context file with snapshot injection (219 tests
 total).
 
 Not implemented: - Conversation summarization, pruning, or compaction. -

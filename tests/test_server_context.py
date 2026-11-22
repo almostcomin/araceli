@@ -1,5 +1,7 @@
 """Automated tests for server context discovery and API error hints."""
 
+import contextlib
+import io
 import json
 import sys
 import unittest
@@ -174,6 +176,44 @@ class ExtractApiErrorDetailTestCase(unittest.TestCase):
         detail = _extract_api_error_detail(OSError("connection lost"))
 
         self.assertEqual(detail, "connection lost")
+
+
+class EstimateTokensTestCase(unittest.TestCase):
+    """Tests for the approximate token estimator."""
+
+    def test_estimate_is_chars_over_four(self):
+        self.assertEqual(main.estimate_tokens("abcd" * 100), 100)
+
+    def test_empty_text_estimates_one_token(self):
+        self.assertEqual(main.estimate_tokens(""), 1)
+
+    def test_estimation_rounds(self):
+        self.assertEqual(main.estimate_tokens("abcdefg"), 2)
+
+
+class PrintContextUsageTestCase(unittest.TestCase):
+    """Tests for the shared context usage line."""
+
+    def _capture(self, used_tokens, context_limit):
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            main.print_context_usage(used_tokens, context_limit)
+
+        return output.getvalue()
+
+    def test_line_contains_values(self):
+        text = self._capture(12058, 32768)
+
+        self.assertIn("Context: 36.8%", text)
+        self.assertIn("(12,058/32,768", text)
+        self.assertIn("20,710 free", text)
+
+    def test_line_warns_at_ninety_percent(self):
+        text = self._capture(31000, 32768)
+
+        self.assertIn("Context: 94.6%", text)
+        self.assertIn("1,768 free", text)
 
 
 if __name__ == "__main__":

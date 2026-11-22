@@ -139,10 +139,13 @@ per-session access to one of them:
 /project add D:\MyFolder     Register a project directory
 /project list                List registered projects
 /project info [name]         Show a project summary (context, progress, pending work)
-/project use MyFolder        Activate it (new conversation starts)
-/project off                 Deactivate (back to no active project)
+/project load MyFolder        Activate it (new conversation starts)
+/project unload              Deactivate (back to no active project)
 /project remove MyFolder     Remove it from the registry
 ```
+
+Activating a project reports how many tokens its context file adds and
+the resulting context usage; unloading frees them.
 
 While a project is active, the file tools operate inside its
 directory (read, list, and write anywhere in the project), and its
@@ -160,8 +163,10 @@ actually does and whether each operation succeeded. Console output is
 color-coded (user prompts, assistant replies, tool executions, and
 warnings use different colors); set the `NO_COLOR` environment
 variable to disable colors. Context usage is reported after each
-response as a single compact line that changes color as the context
-window fills up.
+response and after every action that changes the context (loading or
+unloading a project, resetting the conversation), and the startup
+banner shows an approximate token breakdown of everything loaded
+(instructions, project brief, memory, tools).
 
 ## Tools available to the model
 

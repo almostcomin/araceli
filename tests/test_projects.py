@@ -373,5 +373,79 @@ class ProjectInfoCommandTestCase(unittest.TestCase):
         self.assertFalse(changed)
 
 
+class ProjectLoadUnloadCommandTestCase(unittest.TestCase):
+    """Tests for /project load and /project unload command names."""
+
+    def setUp(self):
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_dir.cleanup)
+
+        self.base = Path(self._temp_dir.name)
+        self.registry_path = self.base / "data" / "projects.json"
+
+        self.araceli_root = self.base / "araceli"
+        self.araceli_root.mkdir()
+
+        root_patcher = mock.patch.object(
+            projects, "ARACELI_ROOT", self.araceli_root
+        )
+        root_patcher.start()
+        self.addCleanup(root_patcher.stop)
+
+        registry_patcher = mock.patch.object(
+            projects, "PROJECTS_FILE", self.registry_path
+        )
+        registry_patcher.start()
+        self.addCleanup(registry_patcher.stop)
+
+        self.project_dir = self.base / "Demo"
+        self.project_dir.mkdir()
+
+        self.entry = add_project(str(self.project_dir))
+
+    def test_load_activates_project(self):
+        message, active, changed = main._handle_project_command(
+            "/project load demo", None
+        )
+
+        self.assertEqual(active["name"], "Demo")
+        self.assertTrue(changed)
+        self.assertIn("Active project: Demo", message)
+
+    def test_load_unknown_name_reports_error(self):
+        message, active, changed = main._handle_project_command(
+            "/project load ghost", None
+        )
+
+        self.assertIn("No project is registered", message)
+        self.assertIsNone(active)
+        self.assertFalse(changed)
+
+    def test_unload_deactivates_project(self):
+        message, active, changed = main._handle_project_command(
+            "/project unload", self.entry
+        )
+
+        self.assertIsNone(active)
+        self.assertTrue(changed)
+        self.assertIn("Project deactivated: Demo", message)
+
+    def test_unload_without_active_project(self):
+        message, active, changed = main._handle_project_command(
+            "/project unload", None
+        )
+
+        self.assertIn("No active project.", message)
+        self.assertIsNone(active)
+        self.assertFalse(changed)
+
+    def test_old_command_names_fall_to_usage(self):
+        message, _, _ = main._handle_project_command(
+            "/project set demo", None
+        )
+
+        self.assertIn("Usage:", message)
+
+
 if __name__ == "__main__":
     unittest.main()

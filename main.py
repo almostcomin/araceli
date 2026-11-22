@@ -70,7 +70,7 @@ from console import (
 
 ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / SYSTEM_PROMPT_FILE
-PROJECT_CONTEXT_PATH = ROOT_DIR / "docs" / "project_context.md"
+PROJECT_CONTEXT_PATH = ROOT_DIR / "docs" / "araceli_brief.md"
 
 MAX_TOOL_ROUNDS = 8
 
@@ -84,9 +84,9 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "calculate",
             "description": (
-                "Evaluate a mathematical expression using a restricted "
-                "arithmetic calculator. The tool response includes a "
-                "Python-generated execution ID and execution status."
+                "Evaluate a mathematical expression with a restricted "
+                "arithmetic calculator (no variables, no function "
+                "calls)."
             ),
             "parameters": {
                 "type": "object",
@@ -104,15 +104,10 @@ BASE_TOOL_DEFINITIONS = [
             "name": "list_files",
             "description": (
                 "List files in a directory of the current workspace: "
-                "the active project directory if one is active, "
-                "otherwise the Araceli repository. In an active "
-                "project it lists ALL files and directories "
-                "regardless of extension, with PDF documents "
-                "classified in pdf_files (read them with read_pdf). "
-                "In the repository it lists readable text files only. "
-                "The result includes the time at which the listing was "
-                "generated. Paths must be relative to the workspace "
-                "root."
+                "in an active project, ALL files and directories with "
+                "PDFs classified in pdf_files; in the repository, "
+                "readable text files only. Paths relative to the "
+                "workspace root."
             ),
             "parameters": {
                 "type": "object",
@@ -131,17 +126,11 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "read_file",
             "description": (
-                "Read the current contents of a UTF-8 text file inside "
-                "the current workspace: the active project directory "
-                "if one is active, otherwise the Araceli repository. "
-                "In an active project any file is attempted as UTF-8 "
-                "text; PDF files must be read with read_pdf, and "
-                "files that cannot be decoded as text have no reader "
-                "tool (ask the user). In the repository only allowed "
-                "text extensions can be read. The result includes "
-                "Python-generated source metadata: relative path, "
-                "read timestamp, byte size, and SHA-256 hash. This is "
-                "a fresh disk read, not a startup snapshot."
+                "Read a UTF-8 text file (fresh disk read with "
+                "SHA-256 provenance). In an active project any file "
+                "is attempted as text (PDFs: use read_pdf; "
+                "undecodable files: no reader available). In the "
+                "repository, allowed text extensions only."
             ),
             "parameters": {
                 "type": "object",
@@ -158,15 +147,10 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "write_file",
             "description": (
-                "Create or update a text file. In an active project, "
-                "writing is allowed anywhere inside the project "
-                "directory with any extension. Without an active "
-                "project, writing is restricted to the memory, tests "
-                "and docs directories of the Araceli repository with "
-                "a text extension allowlist. Existing files are "
-                "backed up automatically. The result reports the "
-                "backup and whether the written bytes were verified by "
-                "reading the file back."
+                "Create or update a text file, verified by reading it "
+                "back, with automatic backup. Active project: anywhere "
+                "inside it, any extension. Repository: only memory/, "
+                "tests/, docs/ with text extensions."
             ),
             "parameters": {
                 "type": "object",
@@ -184,24 +168,17 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "read_pdf",
             "description": (
-                "Extract text from a PDF document. Search order: the "
-                "active project directory if one is active, then the "
-                "configured documents directories. The path is "
-                "relative to those roots, e.g. 'bill.pdf'. The result "
-                "includes the extracted text, page count and source "
-                "metadata (SHA-256, extraction timestamp). Scanned "
-                "PDFs without a text layer return no text."
+                "Extract text from a PDF (search order: active "
+                "project, then documents directories). Includes page "
+                "count and SHA-256; scanned PDFs return no text. Use "
+                "list_documents to discover files."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": (
-                            "Path relative to the document roots, "
-                            "e.g. 'gas_bill_november.pdf'. Use "
-                            "list_documents to discover available files."
-                        ),
+                        "description": "e.g. 'bill.pdf'",
                     }
                 },
                 "required": ["path"],
@@ -215,10 +192,8 @@ BASE_TOOL_DEFINITIONS = [
             "name": "list_documents",
             "description": (
                 "List the PDF documents available in the active "
-                "project (if any) and the configured documents "
-                "directories, with name, size and modification time. "
-                "Use it to discover which documents can be read with "
-                "read_pdf. Takes no arguments."
+                "project and documents directories (name, size, "
+                "modified time). No arguments."
             ),
             "parameters": {
                 "type": "object",
@@ -233,10 +208,8 @@ BASE_TOOL_DEFINITIONS = [
             "name": "web_search",
             "description": (
                 "Search the web with generic, non-identifying queries "
-                "and return titles, URLs and snippets. Never include "
-                "private data (names, addresses, contract numbers, "
-                "consumption figures from private documents) in the "
-                "query. Use web_fetch to read a specific result page."
+                "only (never private data). Returns titles, URLs and "
+                "snippets; use web_fetch to read a result page."
             ),
             "parameters": {
                 "type": "object",
@@ -265,11 +238,9 @@ BASE_TOOL_DEFINITIONS = [
         "function": {
             "name": "web_fetch",
             "description": (
-                "Fetch a public http(s) page and return its readable "
-                "text with the final URL and fetch timestamp. Only "
-                "public addresses on ports 80/443 are allowed. Use it "
-                "to read pages found with web_search and cite their "
-                "URLs as sources."
+                "Fetch a public http(s) page as readable text (final "
+                "URL and fetch timestamp). Only public hosts on ports "
+                "80/443; cite URLs as sources."
             ),
             "parameters": {
                 "type": "object",
@@ -302,48 +273,32 @@ MEMORY_TOOL_DEFINITIONS = [
         "function": {
             "name": "save_memory",
             "description": (
-                "Store a new persistent memory that remains available "
-                "across conversation resets and application restarts. "
-                "Search first to avoid duplicates: if an active memory "
-                "with the same category and title exists, update it "
-                "with update_memory instead."
+                "Store a persistent memory (survives resets and "
+                "restarts). Search first: if an active memory with the "
+                "same category and title exists, update it instead."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "category": {
                         "type": "string",
-                        "description": (
-                            "Memory category."
-                        ),
                         "enum": MEMORY_CATEGORY_ENUM,
                     },
                     "title": {
                         "type": "string",
-                        "description": (
-                            "Short identifying label "
-                            "(max 200 characters)."
-                        ),
+                        "description": "Short label (max 200 chars).",
                     },
                     "content": {
                         "type": "string",
-                        "description": (
-                            "The memory itself (max 4000 characters)."
-                        ),
+                        "description": "The memory (max 4000 chars).",
                     },
                     "tags": {
                         "type": "string",
-                        "description": (
-                            "Optional comma-separated keywords "
-                            "(max 200 characters)."
-                        ),
+                        "description": "Optional keywords (max 200).",
                     },
                     "source": {
                         "type": "string",
-                        "description": (
-                            "Optional provenance note about where this "
-                            "information comes from."
-                        ),
+                        "description": "Optional provenance note.",
                     },
                 },
                 "required": ["category", "title", "content"],
@@ -356,10 +311,10 @@ MEMORY_TOOL_DEFINITIONS = [
         "function": {
             "name": "search_memories",
             "description": (
-                "Search persistent memories by keyword across title, "
-                "content and tags. Returns active memories by default, "
-                "most recently updated first. Use this to check the "
-                "current complete state of memory."
+                "Search persistent memories by keyword (title, "
+                "content, tags). Active memories by default, most "
+                "recently updated first; use it for the current "
+                "complete memory state."
             ),
             "parameters": {
                 "type": "object",
@@ -392,9 +347,8 @@ MEMORY_TOOL_DEFINITIONS = [
         "function": {
             "name": "update_memory",
             "description": (
-                "Update an existing persistent memory by id. Use this "
-                "to correct or refine a memory, or to mark it as "
-                "superseded when it is no longer current."
+                "Update a memory by id, or mark it superseded when it "
+                "is no longer current."
             ),
             "parameters": {
                 "type": "object",
@@ -521,9 +475,6 @@ def build_system_prompt(
     if project_context:
         combined_prompt += (
             "\n\n"
-            "The following section contains technical reference "
-            "information about the project. It supplements the "
-            "behavioral instructions above and does not replace them.\n\n"
             "## Project Context — Startup Snapshot\n\n"
             f"{project_context}"
         )
@@ -536,10 +487,8 @@ def build_system_prompt(
 
     source_manifest = {
         "description": (
-            "This manifest records files actually loaded by Python "
-            "during this application startup. It is a startup snapshot, "
-            "not a live description of files currently on disk. Use "
-            "read_file to inspect current file contents."
+            "Files loaded by Python at startup; a snapshot, not live "
+            "disk state. Use read_file for current contents."
         ),
         "system_prompt": system_prompt_source,
         "project_context": project_context_source,
@@ -548,21 +497,9 @@ def build_system_prompt(
     combined_prompt += (
         "\n\n"
         "## Runtime Source Manifest\n\n"
-        "The following JSON was generated by Python at startup. "
-        "Treat it as authoritative metadata about the startup files "
-        "loaded into this process. Do not infer the current disk state "
-        "from this manifest.\n\n"
-        "Tool provenance rules: every tool response contains an "
-        "execution record generated by Python. Treat an operation as "
-        "completed only when execution.status is 'success'. For read_file, "
-        "use result.source as evidence of a fresh disk read and preserve "
-        "its path, read_at timestamp and SHA-256 when relevant. For "
-        "write_file, report success only when execution.status is "
-        "'success' and result.operation.verified is true. An error status "
-        "means the requested operation did not complete successfully. "
-        "A directory listing is only a snapshot from its listed_at time. "
-        "Never claim a tool ran or succeeded without a corresponding "
-        "successful execution record in the conversation.\n\n"
+        "Generated by Python at startup. Every tool response contains "
+        "an execution record: treat an operation as completed only "
+        "when execution.status is 'success'.\n\n"
         "```json\n"
         f"{json.dumps(source_manifest, ensure_ascii=False, indent=2)}\n"
         "```"
@@ -706,6 +643,33 @@ def build_active_project_section(
         )
 
     return section
+
+
+def estimate_tokens(text: str) -> int:
+    """Approximate the token count of a text (chars/4 heuristic)."""
+
+    return max(1, round(len(text) / 4))
+
+
+def print_context_usage(used_tokens: int, context_limit: int) -> None:
+    """Print the standard context usage line with threshold colors."""
+
+    available_tokens = max(0, context_limit - used_tokens)
+    usage_percentage = (used_tokens / context_limit) * 100
+
+    if usage_percentage >= 90:
+        context_style = SYSTEM_ERROR
+    else:
+        context_style = SYSTEM_MESSAGE
+
+    print(
+        paint(
+            f"\nContext: {usage_percentage:.1f}% "
+            f"({used_tokens:,}/{context_limit:,} "
+            f"tokens) - {available_tokens:,} free",
+            *context_style,
+        )
+    )
 
 
 def query_server_context() -> int | None:
@@ -1084,7 +1048,7 @@ def forget_memory(memory_id: int) -> None:
 
 _PROJECT_USAGE = (
     "Usage: /project [status | list | info [name] | add <path> | "
-    "remove <name> | use <name> | off]"
+    "remove <name> | load <name> | unload]"
 )
 
 _PROJECT_FILE_COUNT_CAP = 500
@@ -1170,7 +1134,7 @@ def _handle_project_command(
     if subcommand == "status":
         if active_project is None:
             return (
-                "No active project. Use /project set <name> to "
+                "No active project. Use /project load <name> to "
                 "activate one, or /project add <path> to register a "
                 "new project.",
                 active_project,
@@ -1276,7 +1240,7 @@ def _handle_project_command(
 
         return (
             f"Project added: {entry['name']} ({entry['path']})\n"
-            f"Activate it with: /project use {entry['name']}",
+            f"Activate it with: /project load {entry['name']}",
             active_project,
             False,
         )
@@ -1303,7 +1267,7 @@ def _handle_project_command(
 
         return (message, None if was_active else active_project, was_active)
 
-    if subcommand == "set":
+    if subcommand == "load":
         if not argument:
             return (_PROJECT_USAGE, active_project, False)
 
@@ -1326,7 +1290,7 @@ def _handle_project_command(
 
         return (f"Active project: {entry['name']}", entry, True)
 
-    if subcommand == "off":
+    if subcommand == "unload":
         if active_project is None:
             return ("No active project.", active_project, False)
 
@@ -1386,8 +1350,8 @@ def main() -> None:
 
     def compose_prompt(
         current_project: dict[str, Any] | None,
-    ) -> str:
-        """Compose the full system prompt for a conversation start."""
+    ) -> tuple[str, dict[str, int]]:
+        """Compose the full system prompt and estimate its components."""
 
         prompt_memory_section = None
 
@@ -1409,7 +1373,7 @@ def main() -> None:
             else None
         )
 
-        return build_system_prompt(
+        prompt = build_system_prompt(
             behavioral_prompt,
             behavioral_source,
             project_context,
@@ -1418,10 +1382,36 @@ def main() -> None:
             project_section,
         )
 
-    system_prompt = compose_prompt(active_project)
+        known_chars = (
+            len(behavioral_prompt)
+            + len(project_context or "")
+            + len(prompt_memory_section or "")
+            + len(project_section or "")
+        )
+        manifest_chars = max(0, len(prompt) - known_chars)
+
+        breakdown = {
+            "instructions": estimate_tokens(behavioral_prompt),
+            "project_brief": estimate_tokens(project_context or ""),
+            "memory_and_manifest": (
+                estimate_tokens(prompt_memory_section or "")
+                + max(0, round(manifest_chars / 4))
+            ),
+        }
+
+        if project_section:
+            breakdown["active_project"] = estimate_tokens(project_section)
+
+        return prompt, breakdown
+
+    system_prompt, breakdown = compose_prompt(active_project)
 
     tool_definitions = BASE_TOOL_DEFINITIONS + (
         MEMORY_TOOL_DEFINITIONS if memory_enabled else []
+    )
+
+    tools_tokens = estimate_tokens(
+        json.dumps(tool_definitions, ensure_ascii=False)
     )
 
     server_context = query_server_context()
@@ -1469,6 +1459,19 @@ def main() -> None:
             )
         )
 
+    startup_tokens = sum(breakdown.values()) + tools_tokens
+
+    print(
+        paint(
+            f"Startup context (approx): {startup_tokens:,} tokens - "
+            f"instructions {breakdown['instructions']:,}, "
+            f"project brief {breakdown['project_brief']:,}, "
+            f"memory/manifest {breakdown['memory_and_manifest']:,}, "
+            f"tools {tools_tokens:,}",
+            *SYSTEM_MESSAGE,
+        )
+    )
+
     if memory_enabled:
         print(
             paint(
@@ -1493,7 +1496,7 @@ def main() -> None:
     print(paint("\t/forget <id> (delete memory)", *SYSTEM_MESSAGE))
     print(
         paint(
-            "\t/project [status|list|info|add|remove|set|off] "
+            "\t/project [status|list|info|add|remove|load|unload] "
             "(manage project workspaces)",
             *SYSTEM_MESSAGE,
         )
@@ -1521,9 +1524,13 @@ def main() -> None:
                 break
 
             if command == "/reset":
-                system_prompt = compose_prompt(active_project)
+                system_prompt, breakdown = compose_prompt(active_project)
                 messages = create_conversation(system_prompt)
                 print(paint("\n[Conversation reset]", *SYSTEM_MESSAGE))
+                print_context_usage(
+                    sum(breakdown.values()) + tools_tokens,
+                    context_limit,
+                )
                 continue
 
             if command == "/project" or command.startswith("/project "):
@@ -1542,9 +1549,25 @@ def main() -> None:
                     else:
                         set_workspace(None)
 
-                    system_prompt = compose_prompt(active_project)
+                    system_prompt, breakdown = compose_prompt(active_project)
                     messages = create_conversation(system_prompt)
                     print(paint("\n[New conversation started]", *SYSTEM_MESSAGE))
+
+                    if active_project is not None and (
+                        "active_project" in breakdown
+                    ):
+                        print(
+                            paint(
+                                f"Project context adds "
+                                f"~{breakdown['active_project']:,} tokens",
+                                *SYSTEM_MESSAGE,
+                            )
+                        )
+
+                    print_context_usage(
+                        sum(breakdown.values()) + tools_tokens,
+                        context_limit,
+                    )
 
                 continue
 
@@ -1613,28 +1636,7 @@ def main() -> None:
                 print(paint(answer, *ARACELI_TEXT))
 
                 if context_tokens is not None:
-                    available_tokens = max(
-                        0,
-                        context_limit - context_tokens,
-                    )
-
-                    usage_percentage = (
-                        context_tokens / context_limit
-                    ) * 100
-
-                    if usage_percentage >= 90:
-                        context_style = SYSTEM_ERROR
-                    else:
-                        context_style = SYSTEM_MESSAGE
-
-                    print(
-                        paint(
-                            f"\nContext: {usage_percentage:.1f}% "
-                            f"({context_tokens:,}/{context_limit:,} "
-                            f"tokens) - {available_tokens:,} free",
-                            *context_style,
-                        )
-                    )
+                    print_context_usage(context_tokens, context_limit)
                 else:
                     print(paint("\nContext usage: unavailable", *SYSTEM_MESSAGE))
 
