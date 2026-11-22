@@ -1533,6 +1533,13 @@ def print_commands() -> None:
     print(paint("\t/language [code] (conversation language)", *SYSTEM_MESSAGE))
     print(
         paint(
+            "\t  examples: /language es (Spanish), /language en "
+            "(English), /language zh (Simplified Chinese)",
+            *SYSTEM_MESSAGE,
+        )
+    )
+    print(
+        paint(
             "\t/project [status|list|info|add|remove|load|unload] "
             "(manage project workspaces)",
             *SYSTEM_MESSAGE,
