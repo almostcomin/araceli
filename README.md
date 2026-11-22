@@ -16,7 +16,8 @@ Araceli is designed to be a genuinely useful assistant, not a
 chatbot with predefined commands. Its core capabilities:
 
 - **Conversation** with a local model through a console interface,
-  in Spanish, with tool calling.
+  in the configured conversation language (Spanish by default), with
+  tool calling.
 - **Persistent memory** backed by SQLite: user-level and general
   knowledge (preferences, personal context, decisions, tasks, facts)
   that survives conversation resets and application restarts. Memory
@@ -130,6 +131,7 @@ Console commands:
 | `/memory` | List active memories with ids, categories and titles |
 | `/forget <id>` | Physically delete a memory by id |
 | `/context [compact]` | Show context usage; `compact` summarizes the conversation and frees tokens |
+| `/language [code]` | Show or set the conversation language (persisted, ISO code like `es`, `en`) |
 | `/project` | Manage project workspaces (see below) |
 | `/exit` | Quit the application |
 
