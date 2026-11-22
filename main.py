@@ -272,7 +272,6 @@ BASE_TOOL_DEFINITIONS = [
 MEMORY_CATEGORY_ENUM = [
     "preference",
     "personal",
-    "project",
     "decision",
     "task",
     "fact",
@@ -286,8 +285,12 @@ MEMORY_TOOL_DEFINITIONS = [
             "name": "save_memory",
             "description": (
                 "Store a persistent memory (survives resets and "
-                "restarts). Search first: if an active memory with the "
-                "same category and title exists, update it instead."
+                "restarts). Memory is for compact facts (max 4000 "
+                "chars): long reports or comparatives belong in "
+                "project files (write_file). Memory is independent of "
+                "projects: project work data lives in the project's "
+                "context file. Search first: if an active memory with "
+                "the same category and title exists, update it instead."
             ),
             "parameters": {
                 "type": "object",
@@ -1436,6 +1439,25 @@ def _handle_project_command(
     return (_PROJECT_USAGE, active_project, False)
 
 
+def print_commands() -> None:
+    """Print the available console commands."""
+
+    print(paint("Commands:", *SYSTEM_MESSAGE))
+    print(paint("\t/reset (new conversation)", *SYSTEM_MESSAGE))
+    print(paint("\t/memory (list memories)", *SYSTEM_MESSAGE))
+    print(paint("\t/forget <id> (delete memory)", *SYSTEM_MESSAGE))
+    print(paint("\t/context (context usage)", *SYSTEM_MESSAGE))
+    print(
+        paint(
+            "\t/project [status|list|info|add|remove|load|unload] "
+            "(manage project workspaces)",
+            *SYSTEM_MESSAGE,
+        )
+    )
+    print(paint("\t/help (show this list)", *SYSTEM_MESSAGE))
+    print(paint("\t/exit (quit)", *SYSTEM_MESSAGE))
+
+
 def main() -> None:
     """Application entry point."""
 
@@ -1625,19 +1647,7 @@ def main() -> None:
     print(paint("Active project: none", *SYSTEM_MESSAGE))
 
     print(paint("\nAraceli is ready.", *SYSTEM_MESSAGE))
-    print(paint("Commands:", *SYSTEM_MESSAGE))
-    print(paint("\t/reset (new conversation)", *SYSTEM_MESSAGE))
-    print(paint("\t/memory (list memories)", *SYSTEM_MESSAGE))
-    print(paint("\t/forget <id> (delete memory)", *SYSTEM_MESSAGE))
-    print(paint("\t/context (context usage)", *SYSTEM_MESSAGE))
-    print(
-        paint(
-            "\t/project [status|list|info|add|remove|load|unload] "
-            "(manage project workspaces)",
-            *SYSTEM_MESSAGE,
-        )
-    )
-    print(paint("\t/exit (quit)", *SYSTEM_MESSAGE))
+    print_commands()
 
     print(paint("-" * 55, *SYSTEM_MESSAGE))
 
@@ -1668,6 +1678,10 @@ def main() -> None:
                     sum(breakdown.values()) + tools_tokens,
                     context_limit,
                 )
+                continue
+
+            if command == "/help":
+                print_commands()
                 continue
 
             if command == "/context":
