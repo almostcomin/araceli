@@ -248,6 +248,7 @@ class ActiveProjectSectionTestCase(unittest.TestCase):
         self.assertIn("not derivable from the files", section)
         self.assertIn("NEVER ask permission", section)
         self.assertIn("IS a required update", section)
+        self.assertIn("add one line to the context file", section)
 
     def test_section_includes_context_snapshot(self):
         context_path = (
