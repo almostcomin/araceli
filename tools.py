@@ -103,6 +103,14 @@ _UNARY_OPERATORS = {
     ast.USub: operator.neg,
 }
 
+_ALLOWED_FUNCTIONS = {
+    "round": round,
+    "abs": abs,
+    "min": min,
+    "max": max,
+    "sqrt": math.sqrt,
+}
+
 
 def _utc_timestamp() -> str:
     """Return the current UTC timestamp in ISO 8601 format."""
@@ -201,8 +209,33 @@ def calculate(expression: str) -> int | float:
 
             result = function(evaluate_node(node.operand))
 
+        elif isinstance(node, ast.Call):
+            function = None
+
+            if isinstance(node.func, ast.Name):
+                function = _ALLOWED_FUNCTIONS.get(node.func.id)
+
+            if function is None:
+                raise ValueError(
+                    "Unsupported function: only round, abs, min, max "
+                    "and sqrt are allowed."
+                )
+
+            if node.keywords:
+                raise ValueError(
+                    "Keyword arguments are not supported in calculate."
+                )
+
+            result = function(
+                *(evaluate_node(argument) for argument in node.args)
+            )
+
         else:
-            raise ValueError("Unsupported expression.")
+            raise ValueError(
+                "Unsupported expression: only numbers, the operators "
+                "+ - * / // % **, parentheses, and the functions "
+                "round, abs, min, max and sqrt are allowed."
+            )
 
         if not math.isfinite(result) or abs(result) > MAX_RESULT_MAGNITUDE:
             raise ValueError("Result is outside the allowed range.")

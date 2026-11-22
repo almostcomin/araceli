@@ -136,8 +136,10 @@ memories survive both.
 The model can request these tools:
 
 -   `calculate(expression)`: evaluates arithmetic using restricted AST
-    parsing. It does not execute arbitrary Python or support variables
-    or function calls.
+    parsing, with a whitelist of math functions (`round`, `abs`,
+    `min`, `max`, `sqrt`). It does not execute arbitrary Python or
+    support variables, lists, or function calls outside the
+    whitelist. Multi-line expressions are normalized before parsing.
 -   `list_files(directory=".")`: lists files in the current workspace.
     In an active project it lists all files and directories regardless
     of extension (PDF documents classified in `pdf_files`, with a note

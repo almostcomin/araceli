@@ -55,10 +55,6 @@ class CalculateTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate("x")
 
-    def test_rejects_function_calls(self):
-        with self.assertRaises(ValueError):
-            calculate("sqrt(4)")
-
     def test_rejects_boolean_and_string_constants(self):
         with self.assertRaises(ValueError):
             calculate("True")
@@ -90,6 +86,27 @@ class CalculateTestCase(unittest.TestCase):
         normalized_fits = "\n".join(["1"] + ["+ 1"] * 39)
 
         self.assertEqual(calculate(normalized_fits), 40)
+
+    def test_allowed_functions(self):
+        self.assertEqual(calculate("round(2.678, 2)"), 2.68)
+        self.assertEqual(calculate("round(7)"), 7)
+        self.assertEqual(calculate("abs(-5)"), 5)
+        self.assertEqual(calculate("min(3, 1, 2)"), 1)
+        self.assertEqual(calculate("max(3, 1, 2)"), 3)
+        self.assertEqual(calculate("sqrt(144)"), 12)
+        self.assertAlmostEqual(
+            calculate("round((61.12 + 43.28) / 2, 2)"), 52.2, places=2
+        )
+
+    def test_rejects_disallowed_functions(self):
+        for expression in ("sum([1, 2])", "mean(1, 2)", "eval('1')"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(ValueError):
+                    calculate(expression)
+
+    def test_rejects_keyword_arguments(self):
+        with self.assertRaises(ValueError):
+            calculate("round(2.678, ndigits=2)")
 
     def test_division_by_zero_raises(self):
         with self.assertRaises(ZeroDivisionError):
