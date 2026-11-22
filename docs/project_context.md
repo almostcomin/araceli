@@ -75,7 +75,8 @@ application-side validation.
 6.  The console accepts user messages and supports these commands:
     `/reset` (new conversation), `/memory` (list active memories),
     `/forget <id>` (physically delete a memory), `/context` (context
-    usage), `/project`
+    usage), `/context compact` (summarize the conversation and rebuild
+    it compactly, freeing tokens), `/project`
     (manage project workspaces: `status`, `list`, `info [name]`,
     `add <path>`, `remove <name>`, `load <name>`, `unload`), and `/exit`
     (quit). Memory management and project management commands are

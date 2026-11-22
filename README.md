@@ -127,6 +127,7 @@ Console commands:
 | `/reset` | Start a new conversation (memory snapshot is refreshed) |
 | `/memory` | List active memories with ids, categories and titles |
 | `/forget <id>` | Physically delete a memory by id |
+| `/context [compact]` | Show context usage; `compact` summarizes the conversation and frees tokens |
 | `/project` | Manage project workspaces (see below) |
 | `/exit` | Quit the application |
 

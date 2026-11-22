@@ -1507,7 +1507,12 @@ def print_commands() -> None:
     print(paint("\t/reset (new conversation)", *SYSTEM_MESSAGE))
     print(paint("\t/memory (list memories)", *SYSTEM_MESSAGE))
     print(paint("\t/forget <id> (delete memory)", *SYSTEM_MESSAGE))
-    print(paint("\t/context (context usage)", *SYSTEM_MESSAGE))
+    print(
+        paint(
+            "\t/context [compact] (context usage / summarize and free tokens)",
+            *SYSTEM_MESSAGE,
+        )
+    )
     print(
         paint(
             "\t/project [status|list|info|add|remove|load|unload] "
