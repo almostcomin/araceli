@@ -748,28 +748,33 @@ def compact_conversation(
 
 def print_context_usage(
     used_tokens: int,
-    context_limit: int,
+    context_limit: int | None,
     tokens_per_second: float | None = None,
 ) -> None:
     """Print the standard context usage line with threshold colors.
 
-    When tokens_per_second is provided (generation speed measured in
-    generate_response), it is appended to the line.
+    When the server context limit is not verified, the line shows
+    the used tokens with an <unknown> limit - no invented values.
     """
 
-    available_tokens = max(0, context_limit - used_tokens)
-    usage_percentage = (used_tokens / context_limit) * 100
+    line = f"\nContext: {used_tokens:,} tokens used"
 
-    if usage_percentage >= 90:
-        context_style = SYSTEM_ERROR
+    if context_limit is not None:
+        available_tokens = max(0, context_limit - used_tokens)
+        usage_percentage = (used_tokens / context_limit) * 100
+
+        if usage_percentage >= 90:
+            context_style = SYSTEM_ERROR
+        else:
+            context_style = SYSTEM_MESSAGE
+
+        line += (
+            f" - {usage_percentage:.1f}% of {context_limit:,} "
+            f"({available_tokens:,} free)"
+        )
     else:
         context_style = SYSTEM_MESSAGE
-
-    line = (
-        f"\nContext: {usage_percentage:.1f}% "
-        f"({used_tokens:,}/{context_limit:,} "
-        f"tokens) - {available_tokens:,} free"
-    )
+        line += " - limit <unknown>"
 
     if tokens_per_second is not None:
         line += f" | {tokens_per_second:.1f} tok/s"
@@ -1643,9 +1648,7 @@ def main() -> None:
 
     server_context = query_server_context()
 
-    context_limit = (
-        server_context if server_context is not None else CONTEXT_LENGTH
-    )
+    context_limit = server_context
 
     last_context_usage = None
 
@@ -1682,8 +1685,7 @@ def main() -> None:
     else:
         print(
             paint(
-                f"Context length: {CONTEXT_LENGTH:,} tokens "
-                "(server verification unavailable)",
+                "Context length: <unknown> (verification pending)",
                 *SYSTEM_MESSAGE,
             )
         )
@@ -1726,6 +1728,30 @@ def main() -> None:
     while True:
 
         try:
+            if server_context is None:
+                server_context = query_server_context()
+
+                if server_context is not None:
+                    context_limit = server_context
+                    print(
+                        paint(
+                            f"[Server context verified: "
+                            f"{server_context:,} tokens]",
+                            *SYSTEM_MESSAGE,
+                        )
+                    )
+
+                    if server_context < CONTEXT_LENGTH:
+                        print(
+                            paint(
+                                f"[WARNING] Server model context: "
+                                f"{server_context:,} tokens - smaller than "
+                                f"the configured {CONTEXT_LENGTH:,}. "
+                                "Requests larger than it will fail.",
+                                *SYSTEM_ERROR,
+                            )
+                        )
+
             user_input = input("\n" + paint("You: ", *USER_INPUT)).strip()
 
             if not user_input:

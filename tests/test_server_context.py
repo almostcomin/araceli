@@ -205,15 +205,22 @@ class PrintContextUsageTestCase(unittest.TestCase):
     def test_line_contains_values(self):
         text = self._capture(12058, 32768)
 
-        self.assertIn("Context: 36.8%", text)
-        self.assertIn("(12,058/32,768", text)
+        self.assertIn("Context: 12,058 tokens used", text)
+        self.assertIn("36.8% of 32,768", text)
         self.assertIn("20,710 free", text)
 
     def test_line_warns_at_ninety_percent(self):
         text = self._capture(31000, 32768)
 
-        self.assertIn("Context: 94.6%", text)
-        self.assertIn("1,768 free", text)
+        self.assertIn("Context: 31,000 tokens used", text)
+        self.assertIn("94.6%", text)
+
+    def test_line_with_unknown_limit(self):
+        text = self._capture(5006, None)
+
+        self.assertIn("Context: 5,006 tokens used", text)
+        self.assertIn("limit <unknown>", text)
+        self.assertNotIn("%", text)
 
 
 class ToolBudgetExceededTestCase(unittest.TestCase):
