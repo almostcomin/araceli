@@ -216,5 +216,74 @@ class PrintContextUsageTestCase(unittest.TestCase):
         self.assertIn("1,768 free", text)
 
 
+class ToolBudgetExceededTestCase(unittest.TestCase):
+    """Tests for the tool round budget exception."""
+
+    class _StubFunction:
+        name = "calculate"
+        arguments = '{"expression": "2+2"}'
+
+    class _StubToolCall:
+        def __init__(self):
+            self.id = "call_1"
+            self.function = ToolBudgetExceededTestCase._StubFunction()
+
+    class _StubMessage:
+        def __init__(self):
+            self.content = None
+            self.tool_calls = [ToolBudgetExceededTestCase._StubToolCall()]
+
+        def model_dump(self, exclude_none=False):
+            return {
+                "role": "assistant",
+                "content": self.content,
+            }
+
+    class _StubChoice:
+        def __init__(self):
+            self.message = ToolBudgetExceededTestCase._StubMessage()
+            self.finish_reason = "tool_calls"
+
+    class _StubUsage:
+        prompt_tokens = 100
+        completion_tokens = 10
+
+    class _StubResponse:
+        def __init__(self):
+            self.choices = [ToolBudgetExceededTestCase._StubChoice()]
+            self.usage = ToolBudgetExceededTestCase._StubUsage()
+
+    class _StubCompletions:
+        def create(self, **kwargs):
+            return ToolBudgetExceededTestCase._StubResponse()
+
+    class _StubChat:
+        def __init__(self):
+            self.completions = ToolBudgetExceededTestCase._StubCompletions()
+
+    class _StubClient:
+        def __init__(self):
+            self.chat = ToolBudgetExceededTestCase._StubChat()
+
+    def test_budget_exhaustion_raises_dedicated_exception(self):
+        import contextlib
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(main.ToolBudgetExceeded) as context:
+                main.generate_response(
+                    ToolBudgetExceededTestCase._StubClient(),
+                    [],
+                    main.BASE_TOOL_DEFINITIONS,
+                )
+
+        self.assertIn("16", str(context.exception))
+        self.assertIn("rounds", str(context.exception))
+
+    def test_budget_exception_is_an_exception(self):
+        self.assertIsInstance(
+            main.ToolBudgetExceeded("x"), Exception
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

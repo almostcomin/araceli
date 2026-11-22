@@ -79,7 +79,12 @@ application-side validation.
 8.  The model may request a tool. `main.py` dispatches it through
     `tools.py`, appends the result, prints a compact console line
     describing each execution (`[tool] name -> status`), and continues
-    the model interaction, subject to `MAX_TOOL_ROUNDS` (currently 8).
+    the model interaction, subject to `MAX_TOOL_ROUNDS` (configurable
+    in `config.py`, default 16). When the budget is exhausted, a
+    dedicated `ToolBudgetExceeded` exception is caught by the console
+    loop and reported with guidance (files written during the turn
+    persist; divide the task or `/reset` and continue), instead of a
+    generic communication error.
     If the model emits a tool call as text markup instead of using the
     tool_calls mechanism, Python parses both markup styles the model
     uses (JSON objects and XML-ish function/parameter tags), executes

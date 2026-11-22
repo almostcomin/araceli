@@ -45,6 +45,7 @@ from config import (
     TEMPERATURE,
     MAX_TOKENS,
     SYSTEM_PROMPT_FILE,
+    MAX_TOOL_ROUNDS,
 )
 
 from memory import (
@@ -69,11 +70,13 @@ from console import (
 )
 
 
+class ToolBudgetExceeded(Exception):
+    """Raised when a turn exhausts its tool-call round budget."""
+
+
 ROOT_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = ROOT_DIR / SYSTEM_PROMPT_FILE
 PROJECT_CONTEXT_PATH = ROOT_DIR / "docs" / "araceli_brief.md"
-
-MAX_TOOL_ROUNDS = 8
 
 MEMORY_SNAPSHOT_LIMIT = 15
 MEMORY_CONTENT_PREVIEW_LENGTH = 300
@@ -1102,7 +1105,9 @@ def generate_response(
                 "content": result_text,
             })
 
-    raise RuntimeError("Maximum tool call rounds exceeded.")
+    raise ToolBudgetExceeded(
+        f"The turn used all {MAX_TOOL_ROUNDS} tool rounds."
+    )
 
 
 def print_memory_listing() -> None:
@@ -1795,6 +1800,19 @@ def main() -> None:
 
         except KeyboardInterrupt:
             print(paint("\n\n[Interrupted]", *SYSTEM_MESSAGE))
+            continue
+
+        except ToolBudgetExceeded:
+            print(
+                paint(
+                    f"\n\n[Tool budget] The turn used all "
+                    f"{MAX_TOOL_ROUNDS} tool rounds. Files written "
+                    "during the turn persist on disk. Divide the task "
+                    "into smaller steps, or /reset and continue from "
+                    "the saved files.",
+                    *SYSTEM_ERROR,
+                )
+            )
             continue
 
         except Exception as error:
