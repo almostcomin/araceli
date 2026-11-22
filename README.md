@@ -264,6 +264,28 @@ Planned work, in priority order (details in
 - `web_fetch` only reaches public http/https addresses on ports
   80/443; local and private network addresses are rejected.
 
+## Disclaimer
+
+This software is provided "AS IS", without warranty of any kind. It is
+an AI agent with read/write access to project files and network access
+for web research: you are solely responsible for supervising it, for
+reviewing anything it produces, and for the decisions you make based on
+its output. AI-generated responses may contain errors.
+
+It requires LM Studio and a locally hosted model; nothing in the
+design is intended to send your data outside your machine.
+
+## Acknowledgements
+
+- Developed with the assistance of GLM 5.3 (Z.ai) as the programming
+  copilot.
+- Runs against any tool-calling model served by LM Studio — currently
+  tested with [Qwen's qwen3.5-9b](https://github.com/QwenLM)
+  (Apache-2.0).
+- Built on open-source components: `openai` (Apache-2.0), `pypdf`
+  (BSD-3-Clause), `ddgs` (MIT), `truststore` (MIT), and `fonttools`
+  (MIT).
+
 ## Status
 
 Araceli is under active development. Implemented: conversation with
