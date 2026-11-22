@@ -342,7 +342,9 @@ def update_memory(
                 raise ValueError(
                     "Memory not found: id "
                     f"{memory_id}. Use search_memories to find valid "
-                    "memory ids."
+                    "memory ids. If you meant the project context "
+                    "file, use write_file on .ARACELI_CONTEXT.md "
+                    "instead."
                 )
 
             if "category" in updates or "title" in updates:
