@@ -285,5 +285,80 @@ class ToolBudgetExceededTestCase(unittest.TestCase):
         )
 
 
+class CompactConversationTestCase(unittest.TestCase):
+    """Tests for the conversation compaction command."""
+
+    class _StubTextResponse:
+        def __init__(self, content):
+            self.choices = [mock.Mock()]
+            self.choices[0].message.content = content
+
+    def test_compact_replaces_history_with_summary(self):
+        client = mock.MagicMock()
+        client.chat.completions.create.return_value = (
+            CompactConversationTestCase._StubTextResponse(
+                "Resumen: trabajo completado."
+            )
+        )
+
+        messages = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "tarea"},
+            {"role": "assistant", "content": "hecho"},
+        ]
+
+        new_messages, used = main.compact_conversation(client, messages)
+
+        self.assertEqual(len(new_messages), 2)
+        self.assertEqual(new_messages[0]["role"], "system")
+        self.assertIn("Resumen: trabajo completado.", new_messages[1]["content"])
+        self.assertGreater(used, 0)
+
+    def test_compact_empty_summary_raises(self):
+        client = mock.MagicMock()
+        client.chat.completions.create.return_value = (
+            CompactConversationTestCase._StubTextResponse("")
+        )
+
+        messages = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "tarea"},
+        ]
+
+        with self.assertRaises(ValueError):
+            main.compact_conversation(client, messages)
+
+    def test_compact_short_conversation_raises(self):
+        client = mock.MagicMock()
+
+        with self.assertRaises(ValueError):
+            main.compact_conversation(client, [])
+
+    def test_compact_passes_token_cap_without_tools(self):
+        captured = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            response = mock.MagicMock()
+            response.choices[0].message.content = "Resumen."
+            return response
+
+        client = mock.MagicMock()
+        client.chat.completions.create.side_effect = fake_create
+
+        main.compact_conversation(
+            client,
+            [
+                {"role": "system", "content": "system prompt"},
+                {"role": "user", "content": "tarea"},
+            ],
+        )
+
+        self.assertEqual(
+            captured.get("max_tokens"), main._COMPACTION_MAX_TOKENS
+        )
+        self.assertNotIn("tools", captured)
+
+
 if __name__ == "__main__":
     unittest.main()

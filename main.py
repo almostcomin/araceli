@@ -75,6 +75,17 @@ class ToolBudgetExceeded(Exception):
 
 
 ROOT_DIR = Path(__file__).resolve().parent
+
+_COMPACTION_MAX_TOKENS = 1500
+_COMPACTION_INSTRUCTION = (
+    "Resume la conversaci\u00f3n anterior en un resumen compacto que "
+    "permita continuar el trabajo en una conversaci\u00f3n nueva: objetivo "
+    "del trabajo, lo realizado hasta ahora, decisiones tomadas, datos "
+    "clave y archivos generados, tareas pendientes y siguientes "
+    "pasos. S\u00e9 conciso: el resumen sustituir\u00e1 al historial completo "
+    "de esta conversaci\u00f3n."
+)
+
 PROMPT_PATH = ROOT_DIR / SYSTEM_PROMPT_FILE
 PROJECT_CONTEXT_PATH = ROOT_DIR / "docs" / "araceli_brief.md"
 
@@ -677,6 +688,56 @@ def estimate_tokens(text: str) -> int:
     """Approximate the token count of a text (chars/4 heuristic)."""
 
     return max(1, round(len(text) / 4))
+
+
+def compact_conversation(
+    client: OpenAI,
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Summarize the conversation and rebuild it compactly.
+
+    Returns the new message list and its estimated token usage.
+    """
+
+    if len(messages) < 2:
+        raise ValueError(
+            "There is nothing to compact: the conversation has no "
+            "exchanges yet."
+        )
+
+    compaction_messages = messages + [
+        {"role": "user", "content": _COMPACTION_INSTRUCTION}
+    ]
+
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=compaction_messages,
+        temperature=TEMPERATURE,
+        max_tokens=_COMPACTION_MAX_TOKENS,
+    )
+
+    summary = (response.choices[0].message.content or "").strip()
+
+    if not summary:
+        raise ValueError("The model returned an empty summary.")
+
+    continuation = (
+        "[Sesión continuada a partir de un resumen de la conversación "
+        "anterior. Úsalo para continuar el trabajo; los detalles "
+        "completos están en los archivos del proyecto y en la "
+        "memoria.]\n\n" + summary
+    )
+
+    new_messages = [
+        messages[0],
+        {"role": "user", "content": continuation},
+    ]
+
+    used_tokens = estimate_tokens(
+        new_messages[0]["content"]
+    ) + estimate_tokens(continuation)
+
+    return new_messages, used_tokens
 
 
 def print_context_usage(
@@ -1684,7 +1745,44 @@ def main() -> None:
                 print_commands()
                 continue
 
-            if command == "/context":
+            if command == "/context" or command.startswith("/context "):
+                argument = user_input[len("/context"):].strip().lower()
+
+                if argument == "compact":
+                    try:
+                        messages, used_tokens = compact_conversation(
+                            client, messages
+                        )
+                        last_context_usage = None
+                        print(
+                            paint(
+                                "\n[Conversation compacted]",
+                                *SYSTEM_MESSAGE,
+                            )
+                        )
+                        print_context_usage(used_tokens, context_limit)
+                    except Exception as error:
+                        print(
+                            paint(
+                                f"\n[WARNING] Could not compact the "
+                                f"conversation: {error}",
+                                *SYSTEM_ERROR,
+                            )
+                        )
+
+                    continue
+
+                if argument:
+                    print(
+                        paint(
+                            "\nUnknown /context option. Use /context or "
+                            "/context compact.",
+                            *SYSTEM_ERROR,
+                        )
+                    )
+
+                    continue
+
                 if last_context_usage is not None:
                     print_context_usage(last_context_usage, context_limit)
                 else:
