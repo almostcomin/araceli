@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 import sys
+import urllib.request
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -707,6 +708,44 @@ def build_active_project_section(
     return section
 
 
+def query_server_context() -> int | None:
+    """Ask LM Studio for the loaded model's effective context length.
+
+    Uses LM Studio's native API (GET /api/v0/models) and returns the
+    loaded_context_length of the configured model, or None when the
+    endpoint is unavailable, the format changed, or the model is not
+    loaded.
+    """
+
+    try:
+        api_root = BASE_URL.rstrip("/").removesuffix("/v1")
+        url = f"{api_root}/api/v0/models"
+
+        request = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json"},
+        )
+
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+    except (OSError, ValueError):
+        return None
+
+    for model in payload.get("data", []):
+        if model.get("id") != MODEL:
+            continue
+
+        loaded_context = model.get("loaded_context_length")
+
+        if isinstance(loaded_context, int) and loaded_context > 0:
+            return loaded_context
+
+        return None
+
+    return None
+
+
 def create_client() -> OpenAI:
     """Create an OpenAI-compatible client connected to LM Studio."""
 
@@ -765,6 +804,64 @@ def _print_tool_execution(tool_name: str, result_text: str) -> None:
         print(paint(line, *SYSTEM_ERROR))
     else:
         print(paint(line, *SYSTEM_MESSAGE))
+
+
+def _extract_api_error_detail(error: Exception) -> str:
+    """Return a readable message for API errors, including the body.
+
+    The OpenAI client's str() often stops at "Error code: 400", but
+    the response body carries the server's actual explanation.
+    """
+
+    body = getattr(error, "body", None)
+
+    if isinstance(body, str) and body.strip():
+        return f"{error}: {body}"
+
+    if isinstance(body, dict):
+        try:
+            return f"{error}: {json.dumps(body, ensure_ascii=False)}"
+        except (TypeError, ValueError):
+            return str(error)
+
+    return str(error)
+
+
+def _context_size_hint(error: Exception) -> str | None:
+    """Return a targeted hint when the server rejected a request
+    because it exceeded the model's context size."""
+
+    body = getattr(error, "body", None)
+
+    payload: Any = None
+
+    if isinstance(body, dict):
+        payload = body
+    elif isinstance(body, str):
+        start = body.find("{")
+
+        if start != -1:
+            try:
+                payload = json.loads(body[start:])
+            except json.JSONDecodeError:
+                return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    error_object = payload.get("error")
+
+    if not isinstance(error_object, dict):
+        return None
+
+    if error_object.get("type") != "exceed_context_size_error":
+        return None
+
+    return (
+        "The model's context in LM Studio is smaller than this "
+        f"request. Raise the model's context length in LM Studio "
+        f"(currently {error_object.get('n_ctx')} tokens) and try again."
+    )
 
 
 def _clean_answer(answer: str) -> str:
@@ -1073,7 +1170,7 @@ def _handle_project_command(
     if subcommand == "status":
         if active_project is None:
             return (
-                "No active project. Use /project use <name> to "
+                "No active project. Use /project set <name> to "
                 "activate one, or /project add <path> to register a "
                 "new project.",
                 active_project,
@@ -1327,19 +1424,46 @@ def main() -> None:
         MEMORY_TOOL_DEFINITIONS if memory_enabled else []
     )
 
+    server_context = query_server_context()
+
+    if server_context is not None and server_context < CONTEXT_LENGTH:
+        print(
+            paint(
+                f"\n[WARNING] Server model context: "
+                f"{server_context:,} tokens - smaller than the "
+                f"configured {CONTEXT_LENGTH:,}. Requests larger than "
+                f"{server_context:,} tokens will fail. Raise the "
+                "model's context length in LM Studio.",
+                *SYSTEM_ERROR,
+            )
+        )
+
     try:
         client = create_client()
     except Exception as error:
-        print(paint(f"\nInitialization error: {error}", *SYSTEM_ERROR))
+        print(paint(f"\nInitialization error: {error}", DIM))
         return
 
     messages = create_conversation(system_prompt)
 
     print(paint(f"\nModel: {MODEL}", *SYSTEM_MESSAGE))
     print(paint(f"Server: {BASE_URL}", *SYSTEM_MESSAGE))
-    print(
-        paint(f"Context length: {CONTEXT_LENGTH:,} tokens", *SYSTEM_MESSAGE)
-    )
+    if server_context is not None:
+        print(
+            paint(
+                f"Context length: {server_context:,} tokens "
+                "(server, verified at startup)",
+                *SYSTEM_MESSAGE,
+            )
+        )
+    else:
+        print(
+            paint(
+                f"Context length: {CONTEXT_LENGTH:,} tokens "
+                "(server verification unavailable)",
+                *SYSTEM_MESSAGE,
+            )
+        )
 
     if memory_enabled:
         print(
@@ -1487,11 +1611,11 @@ def main() -> None:
                 if context_tokens is not None:
                     available_tokens = max(
                         0,
-                        CONTEXT_LENGTH - context_tokens,
+                        context_limit - context_tokens,
                     )
 
                     usage_percentage = (
-                        context_tokens / CONTEXT_LENGTH
+                        context_tokens / context_limit
                     ) * 100
 
                     if usage_percentage >= 90:
@@ -1502,7 +1626,7 @@ def main() -> None:
                     print(
                         paint(
                             f"\nContext: {usage_percentage:.1f}% "
-                            f"({context_tokens:,}/{CONTEXT_LENGTH:,} "
+                            f"({context_tokens:,}/{context_limit:,} "
                             f"tokens) - {available_tokens:,} free",
                             *context_style,
                         )
@@ -1531,7 +1655,18 @@ def main() -> None:
             continue
 
         except Exception as error:
-            print(paint(f"\n\nCommunication error: {error}", *SYSTEM_ERROR))
+            error_message = _extract_api_error_detail(error)
+            context_hint = _context_size_hint(error)
+
+            if context_hint:
+                error_message += f"\n{context_hint}"
+
+            print(
+                paint(
+                    f"\n\nCommunication error: {error_message}",
+                    *SYSTEM_ERROR,
+                )
+            )
 
 
 if __name__ == "__main__":

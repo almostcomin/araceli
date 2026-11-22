@@ -373,15 +373,22 @@ roles: `USER_INPUT`/`USER_TEXT` (cyan, user), `ARACELI_INPUT`/
 context usage), and `SYSTEM_ERROR` (red, whole-line errors: failed
 tools, warnings, initialization and communication errors, and
 context usage at or above 90%). - Automated tests for PDF and
-web tools (128 tests total). - Project workspaces: user-side registry
+web tools (128 tests total). - Startup verification of the model's
+effective context length through LM Studio's native API
+(`GET /api/v0/models`, reporting `loaded_context_length`), with a
+prominent warning when the server context is smaller than the
+configured one, and a context usage indicator based on the verified
+value. - API error transparency: connection and API errors include
+the server's response body, and context-size rejections
+(`exceed_context_size_error`) produce a targeted hint with the
+server's actual limit. - Project workspaces: user-side registry
 (`/project add`, `list`, `remove`), per-session activation (`use`,
 `off`), workspace-scoped file tools, and the per-project
 `ARACELI_CONTEXT.md` context file with snapshot injection (164 tests
 total).
 
 Not implemented: - Conversation summarization, pruning, or compaction. -
-Automatic discovery of the
-effective LM Studio context length. - Physical memory deletion through
+Physical memory deletion through
 model tools. - Semantic or embedding-based memory search. - OCR for
 scanned PDFs without a text layer. - Web search quality guarantees:
 some sites block automated access (HTTP 403) and the model must fall

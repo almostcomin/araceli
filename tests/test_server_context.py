@@ -1,0 +1,180 @@
+"""Automated tests for server context discovery and API error hints."""
+
+import json
+import sys
+import unittest
+
+from pathlib import Path
+from unittest import mock
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+import main
+
+from main import (
+    _context_size_hint,
+    _extract_api_error_detail,
+    query_server_context,
+)
+
+
+class _FakeResponse:
+    """Minimal stand-in for the object returned by urlopen."""
+
+    def __init__(self, body):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class QueryServerContextTestCase(unittest.TestCase):
+    """Tests for context discovery through LM Studio's native API."""
+
+    def _mock_urlopen(self, payload):
+        return mock.patch(
+            "urllib.request.urlopen",
+            return_value=_FakeResponse(json.dumps(payload).encode("utf-8")),
+        )
+
+    def test_returns_loaded_context_for_matching_model(self):
+        payload = {
+            "data": [
+                {
+                    "id": "qwen/qwen3.5-9b",
+                    "state": "loaded",
+                    "loaded_context_length": 8192,
+                    "max_context_length": 262144,
+                },
+                {
+                    "id": "text-embedding-nomic-embed-text-v1.5",
+                    "state": "loaded",
+                    "loaded_context_length": 2048,
+                },
+            ]
+        }
+
+        with self._mock_urlopen(payload):
+            result = query_server_context()
+
+        self.assertEqual(result, 8192)
+
+    def test_returns_none_when_model_is_not_loaded(self):
+        payload = {
+            "data": [
+                {"id": "qwen/qwen3.5-9b", "state": "not-loaded"},
+            ]
+        }
+
+        with self._mock_urlopen(payload):
+            self.assertIsNone(query_server_context())
+
+    def test_returns_none_when_model_is_missing(self):
+        payload = {"data": [{"id": "other/model", "state": "loaded"}]}
+
+        with self._mock_urlopen(payload):
+            self.assertIsNone(query_server_context())
+
+    def test_returns_none_on_request_failure(self):
+        with mock.patch(
+            "urllib.request.urlopen", side_effect=OSError("down")
+        ):
+            self.assertIsNone(query_server_context())
+
+    def test_returns_none_on_invalid_payload(self):
+        with mock.patch(
+            "urllib.request.urlopen",
+            return_value=_FakeResponse(b"not json"),
+        ):
+            self.assertIsNone(query_server_context())
+
+    def test_queries_native_api_endpoint(self):
+        with mock.patch(
+            "urllib.request.urlopen",
+            return_value=_FakeResponse(b'{"data": []}'),
+        ) as urlopen_mock:
+            query_server_context()
+
+        request = urlopen_mock.call_args.args[0]
+
+        self.assertEqual(
+            request.full_url, "http://127.0.0.1:1234/api/v0/models"
+        )
+
+
+class ContextSizeHintTestCase(unittest.TestCase):
+    """Tests for the exceed-context-size hint extraction."""
+
+    def test_hint_from_string_body(self):
+        body = (
+            'Engine protocol predict request returned 400: '
+            '{"error":{"code":400,"message":"request (40010 tokens) '
+            'exceeds the available context size (24576 tokens), try '
+            'increasing it","type":"exceed_context_size_error",'
+            '"n_prompt_tokens":40010,"n_ctx":24576}}'
+        )
+
+        FakeError = type(
+            "FakeError",
+            (Exception,),
+            {"body": body},
+        )
+
+        hint = _context_size_hint(FakeError("Error code: 400"))
+
+        self.assertIsNotNone(hint)
+        self.assertIn("24576 tokens", hint)
+        self.assertIn("Raise the model's context length", hint)
+
+    def test_none_for_unrelated_error_body(self):
+        class FakeError(Exception):
+            body = {"error": {"message": "something else"}}
+
+        self.assertIsNone(_context_size_hint(FakeError("x")))
+
+    def test_none_for_garbage_body(self):
+        self.assertIsNone(_context_size_hint(Exception("plain")))
+
+    def test_none_when_json_is_broken(self):
+        body = _MARKUP_BODY_PARTIAL = "prefix {not json"
+
+        self.assertIsNone(_context_size_hint(Exception(body)))
+
+
+class ExtractApiErrorDetailTestCase(unittest.TestCase):
+    """Tests for readable API error messages."""
+
+    def test_includes_string_body(self):
+        class FakeError(Exception):
+            body = "the server explanation"
+
+        detail = _extract_api_error_detail(FakeError("Error code: 400"))
+
+        self.assertEqual(
+            detail, "Error code: 400: the server explanation"
+        )
+
+    def test_includes_dict_body(self):
+        class FakeError(Exception):
+            body = {"error": {"message": "bad request"}}
+
+        detail = _extract_api_error_detail(FakeError("Error code: 400"))
+
+        self.assertIn("bad request", detail)
+
+    def test_plain_exception_uses_str(self):
+        detail = _extract_api_error_detail(OSError("connection lost"))
+
+        self.assertEqual(detail, "connection lost")
+
+
+if __name__ == "__main__":
+    unittest.main()
