@@ -1428,6 +1428,8 @@ def main() -> None:
         server_context if server_context is not None else CONTEXT_LENGTH
     )
 
+    last_context_usage = None
+
     if server_context is not None and server_context < CONTEXT_LENGTH:
         print(
             paint(
@@ -1502,6 +1504,7 @@ def main() -> None:
     print(paint("\t/reset (new conversation)", *SYSTEM_MESSAGE))
     print(paint("\t/memory (list memories)", *SYSTEM_MESSAGE))
     print(paint("\t/forget <id> (delete memory)", *SYSTEM_MESSAGE))
+    print(paint("\t/context (context usage)", *SYSTEM_MESSAGE))
     print(
         paint(
             "\t/project [status|list|info|add|remove|load|unload] "
@@ -1534,11 +1537,23 @@ def main() -> None:
             if command == "/reset":
                 system_prompt, breakdown = compose_prompt(active_project)
                 messages = create_conversation(system_prompt)
+                last_context_usage = None
                 print(paint("\n[Conversation reset]", *SYSTEM_MESSAGE))
                 print_context_usage(
                     sum(breakdown.values()) + tools_tokens,
                     context_limit,
                 )
+                continue
+
+            if command == "/context":
+                if last_context_usage is not None:
+                    print_context_usage(last_context_usage, context_limit)
+                else:
+                    print_context_usage(
+                        sum(breakdown.values()) + tools_tokens,
+                        context_limit,
+                    )
+
                 continue
 
             if command == "/project" or command.startswith("/project "):
@@ -1644,6 +1659,7 @@ def main() -> None:
                 print(paint(answer, *ARACELI_TEXT))
 
                 if context_tokens is not None:
+                    last_context_usage = context_tokens
                     print_context_usage(context_tokens, context_limit)
                 else:
                     print(paint("\nContext usage: unavailable", *SYSTEM_MESSAGE))
