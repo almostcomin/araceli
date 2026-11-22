@@ -246,6 +246,7 @@ class ActiveProjectSectionTestCase(unittest.TestCase):
         self.assertIn("as compact as possible", section)
         self.assertIn("Prefer general rules over enumerations", section)
         self.assertIn("not derivable from the files", section)
+        self.assertIn("Reconciliation needs no permission", section)
 
     def test_section_includes_context_snapshot(self):
         context_path = (
